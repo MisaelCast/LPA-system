@@ -49,4 +49,9 @@ def get_current_user(
 def get_current_active_user(
     current_user: Usuario = Depends(get_current_user),
 ) -> Usuario:
+    if not current_user.activo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario está inactivo.",
+        )
     return current_user

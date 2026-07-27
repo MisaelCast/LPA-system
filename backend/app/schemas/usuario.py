@@ -47,3 +47,9 @@ class DatosToken(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
     usuario_id: int | None = None
+
+
+class UsuarioEstadoUpdate(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    activo: bool

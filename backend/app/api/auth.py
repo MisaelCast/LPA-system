@@ -30,6 +30,12 @@ def login(
             detail="Correo o contraseña incorrectos.",
         )
 
+    if not user.activo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El usuario está inactivo. Contacte al administrador.",
+        )
+
     access_token = create_access_token(subject=str(user.id))
 
     return Token(access_token=access_token, token_type="bearer")

@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.auth.permissions import require_roles
 from app.db.database import get_session
 from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate, UsuarioRead, UsuarioUpdate
+from app.schemas.usuario import UsuarioCreate, UsuarioEstadoUpdate, UsuarioRead, UsuarioUpdate
 from app.services.usuario_service import UsuarioService
 
 router = APIRouter(tags=["usuarios"])
@@ -42,6 +42,33 @@ def obtener_usuario(
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        )
+
+
+@router.patch("/usuarios/{usuario_id}/estado", response_model=UsuarioRead)
+def cambiar_estado_usuario(
+    usuario_id: int,
+    datos: UsuarioEstadoUpdate,
+    session: Session = Depends(get_session),
+    current_user: Usuario = Depends(require_roles("Administrador")),
+) -> Usuario:
+    """Activa o desactiva un usuario del sistema.
+
+    Un administrador no puede desactivarse a sí mismo.
+    Solo accesible por usuarios con rol **Administrador**.
+    """
+    service = UsuarioService(session)
+    try:
+        return service.cambiar_estado(usuario_id, datos.activo, current_user.id)
+    except ValueError as error:
+        if "no encontrado" in str(error).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(error),
         )
 

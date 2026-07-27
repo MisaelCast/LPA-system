@@ -103,3 +103,31 @@ class UsuarioService:
             usuario.contrasena_hash = hash_password(datos.contrasena)
 
         return self._repo.actualizar(usuario)
+
+    def cambiar_estado(
+        self, usuario_id: int, activo: bool, current_user_id: int
+    ) -> Usuario:
+        """Activa o desactiva un usuario.
+
+        Args:
+            usuario_id: ID del usuario cuyo estado se va a cambiar.
+            activo: ``True`` para activar, ``False`` para desactivar.
+            current_user_id: ID del administrador que realiza la operación.
+
+        Returns:
+            Instancia de :class:`Usuario` actualizada.
+
+        Raises:
+            ValueError: Si el usuario no existe o el administrador
+                intenta desactivarse a sí mismo.
+        """
+        usuario = self.obtener_por_id(usuario_id)
+
+        if usuario.activo == activo:
+            return usuario
+
+        if not activo and usuario_id == current_user_id:
+            raise ValueError("No puedes desactivar tu propio usuario.")
+
+        usuario.activo = activo
+        return self._repo.actualizar(usuario)
