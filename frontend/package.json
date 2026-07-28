@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
-   "lint": "eslint . --fix --cache"
+    "lint": "eslint . --fix --cache"
   },
   "dependencies": {
     "pinia": "^4.0.2",
@@ -23,11 +23,10 @@
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/tsconfig": "^0.9.1",
     "eslint": "^10.7.0",
-    
+    "eslint-plugin-oxlint": "^1.76.0",
     "eslint-plugin-vue": "~10.9.2",
     "jiti": "^2.7.0",
     "npm-run-all2": "^9.0.2",
-    
     "typescript": "~6.0.0",
     "vite": "^8.1.5",
     "vite-plugin-vue-devtools": "^8.1.5",
