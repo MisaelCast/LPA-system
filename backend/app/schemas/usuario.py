@@ -27,6 +27,7 @@ class UsuarioUpdate(SQLModel):
 
 class UsuarioRead(UsuarioBase):
     id: int
+    rol_id: int
 
 
 class UsuarioLogin(SQLModel):

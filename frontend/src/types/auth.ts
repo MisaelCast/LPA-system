@@ -13,4 +13,5 @@ export interface Usuario {
   nombre: string
   correo: string
   activo: boolean
+  rol_id: number
 }
