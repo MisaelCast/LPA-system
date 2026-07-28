@@ -133,3 +133,41 @@ Ninguno.
 ### Validaciones
 - `npm run lint` → sin errores
 - `npm run dev` → Vite arranca correctamente
+
+---
+
+## feat: proteger rutas mediante autenticación
+
+**Commit:** 2aa96b5
+
+### Archivos modificados
+- `src/router/index.ts` → Navigation Guard global
+
+### Flujo
+- `meta.requiresAuth === true` + no autenticado → redirect a `/login`
+- Ruta `/login` + autenticado → redirect a `/dashboard`
+- `/dashboard` y `/usuarios` protegidas, `/login` pública
+
+### Validaciones
+- `npm run lint` → sin errores
+- `npm run dev` → Vite arranca correctamente
+
+---
+
+## feat: implementar layout principal
+
+**Commit:** pendiente
+
+### Archivos modificados
+- `src/layouts/MainLayout.vue` → sidebar + header + contenido
+- `src/router/index.ts` → rutas hijas bajo MainLayout
+
+### Estructura
+- **Sidebar**: navegación con `RouterLink` (Dashboard, Usuarios)
+- **Header**: "LPA System" + "Administrador" (fijo)
+- **Contenido**: `<RouterView />` para las vistas hijas
+- `/login` fuera del layout, `/dashboard` y `/usuarios` dentro
+
+### Validaciones
+- `npm run lint` → sin errores
+- `npm run dev` → Vite arranca correctamente
