@@ -1,3 +1,16 @@
+<script setup lang="ts">
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const router = useRouter()
+const authStore = useAuthStore()
+
+function handleLogout() {
+  authStore.clearToken()
+  router.push('/login')
+}
+</script>
+
 <template>
   <div class="layout">
     <aside class="sidebar">
@@ -10,7 +23,10 @@
     <div class="main">
       <header class="header">
         <span class="brand">LPA System</span>
-        <span class="user">Administrador</span>
+        <div class="header-right">
+          <span class="user">Administrador</span>
+          <button class="btn-logout" @click="handleLogout">Cerrar sesión</button>
+        </div>
       </header>
 
       <main class="content">
@@ -67,8 +83,28 @@
   font-size: 1.125rem;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .user {
   color: #64748b;
+}
+
+.btn-logout {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.btn-logout:hover {
+  background: #dc2626;
 }
 
 .content {
