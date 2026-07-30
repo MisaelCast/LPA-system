@@ -1,8 +1,12 @@
 import api from '@/api/api'
-import type { Usuario, UsuarioUpdate } from '@/types/auth'
+import type { Usuario, UsuarioCreate, UsuarioUpdate } from '@/types/auth'
 
 export function obtenerUsuarios(): Promise<Usuario[]> {
   return api.get<Usuario[]>('/usuarios').then((res) => res.data)
+}
+
+export function crearUsuario(datos: UsuarioCreate): Promise<Usuario> {
+  return api.post<Usuario>('/usuarios', datos).then((res) => res.data)
 }
 
 export function actualizarUsuario(

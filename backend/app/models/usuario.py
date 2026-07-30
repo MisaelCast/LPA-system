@@ -36,3 +36,8 @@ class Usuario(SQLModel, table=True):
         back_populates="responsables",
         link_model=HallazgoResponsable,
     )
+
+    @property
+    def rol_nombre(self) -> str:
+        """Nombre del rol asociado al usuario."""
+        return self.rol.nombre if self.rol else ""

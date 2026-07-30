@@ -1,27 +1,74 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useUsuariosStore } from '@/stores/usuarios'
+import { obtenerRoles } from '@/services/rol.service'
 import type { Usuario } from '@/types/auth'
+import type { Rol } from '@/types/rol'
 
 const store = useUsuariosStore()
 
+const roles = ref<Rol[]>([])
+
+/* --- Creación --- */
+const crearNombre = ref('')
+const crearCorreo = ref('')
+const crearContrasena = ref('')
+const crearRolId = ref(0)
+const creando = ref(false)
+
+/* --- Edición --- */
 const editando = ref<Usuario | null>(null)
-const formNombre = ref('')
-const formCorreo = ref('')
-const formRolId = ref(0)
-const mensaje = ref('')
-const error = ref('')
+const editNombre = ref('')
+const editCorreo = ref('')
+const editRolId = ref(0)
 const guardando = ref(false)
 
-onMounted(() => {
+/* --- Mensajes --- */
+const mensaje = ref('')
+const error = ref('')
+
+onMounted(async () => {
   store.cargarUsuarios()
+  roles.value = await obtenerRoles()
 })
 
+/* ——— Crear ——— */
+async function handleCrear() {
+  mensaje.value = ''
+  error.value = ''
+  creando.value = true
+
+  try {
+    await store.crear({
+      nombre: crearNombre.value,
+      correo: crearCorreo.value,
+      contrasena: crearContrasena.value,
+      rol_id: crearRolId.value,
+      activo: true,
+    })
+    mensaje.value = 'Usuario creado correctamente.'
+    crearNombre.value = ''
+    crearCorreo.value = ''
+    crearContrasena.value = ''
+    crearRolId.value = 0
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'response' in err) {
+      const axiosErr = err as { response: { status: number; data?: { detail?: string } } }
+      error.value = axiosErr.response.data?.detail || 'Error al crear el usuario.'
+    } else {
+      error.value = 'Error al crear el usuario.'
+    }
+  } finally {
+    creando.value = false
+  }
+}
+
+/* ——— Editar ——— */
 function iniciarEdicion(u: Usuario) {
   editando.value = u
-  formNombre.value = u.nombre
-  formCorreo.value = u.correo
-  formRolId.value = u.rol_id
+  editNombre.value = u.nombre
+  editCorreo.value = u.correo
+  editRolId.value = u.rol_id
   mensaje.value = ''
   error.value = ''
 }
@@ -37,9 +84,9 @@ async function guardarCambios() {
 
   try {
     await store.actualizar(editando.value.id, {
-      nombre: formNombre.value,
-      correo: formCorreo.value,
-      rol_id: formRolId.value,
+      nombre: editNombre.value,
+      correo: editCorreo.value,
+      rol_id: editRolId.value,
     })
     mensaje.value = 'Usuario actualizado correctamente.'
     editando.value = null
@@ -50,10 +97,7 @@ async function guardarCambios() {
   }
 }
 
-function estadoLabel(activo: boolean): string {
-  return activo ? 'Activo' : 'Inactivo'
-}
-
+/* ——— Estado ——— */
 async function toggleEstado(u: Usuario) {
   const accion = u.activo ? 'desactivar' : 'activar'
   if (!window.confirm(`¿Desea ${accion} este usuario?`)) return
@@ -72,102 +116,289 @@ async function toggleEstado(u: Usuario) {
 </script>
 
 <template>
-  <h1>Usuarios</h1>
+  <div class="page">
+    <h1>Usuarios</h1>
 
-  <p v-if="mensaje" class="exito">{{ mensaje }}</p>
-  <p v-if="error" class="fallo">{{ error }}</p>
+    <!-- Mensajes -->
+    <p v-if="mensaje" class="msg exito">{{ mensaje }}</p>
+    <p v-if="error" class="msg fallo">{{ error }}</p>
 
-  <div v-if="store.cargando">Cargando…</div>
+    <!-- Formulario de creación -->
+    <form class="card" @submit.prevent="handleCrear">
+      <h2 class="card-title">Nuevo usuario</h2>
 
-  <template v-else>
-    <table v-if="store.usuarios.length">
+      <div class="form-row">
+        <label class="field">
+          <span>Nombre</span>
+          <input v-model="crearNombre" required />
+        </label>
+
+        <label class="field">
+          <span>Correo</span>
+          <input v-model="crearCorreo" type="email" required />
+        </label>
+
+        <label class="field">
+          <span>Contraseña</span>
+          <input v-model="crearContrasena" type="password" required />
+        </label>
+
+        <label class="field field-sm">
+          <span>Rol</span>
+          <select v-model.number="crearRolId" required>
+            <option :value="0" disabled>Seleccione</option>
+            <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+          </select>
+        </label>
+
+        <div class="field field-btn">
+          <button class="btn btn-primary" type="submit" :disabled="creando">
+            {{ creando ? 'Creando…' : 'Crear usuario' }}
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- Formulario de edición -->
+    <form v-if="editando" class="card" @submit.prevent="guardarCambios">
+      <h2 class="card-title">Editar usuario</h2>
+
+      <div class="form-row">
+        <label class="field">
+          <span>Nombre</span>
+          <input v-model="editNombre" required />
+        </label>
+
+        <label class="field">
+          <span>Correo</span>
+          <input v-model="editCorreo" type="email" required />
+        </label>
+
+        <label class="field field-sm">
+          <span>Rol</span>
+          <select v-model.number="editRolId" required>
+            <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+          </select>
+        </label>
+
+        <div class="field field-btn">
+          <button class="btn btn-primary" type="submit" :disabled="guardando">
+            {{ guardando ? 'Guardando…' : 'Actualizar' }}
+          </button>
+          <button class="btn btn-secondary" type="button" @click="cancelarEdicion">
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- Tabla -->
+    <div v-if="store.cargando" class="card">Cargando…</div>
+
+    <div v-else-if="store.usuarios.length === 0" class="card">
+      No hay usuarios registrados.
+    </div>
+
+    <table v-else class="table">
       <thead>
         <tr>
           <th>Nombre</th>
           <th>Correo</th>
           <th>Rol</th>
           <th>Estado</th>
-          <th>Acciones</th>
-          <th></th>
+          <th class="th-acciones">Acciones</th>
         </tr>
       </thead>
       <tbody>
         <tr v-for="u in store.usuarios" :key="u.id">
           <td>{{ u.nombre }}</td>
           <td>{{ u.correo }}</td>
-          <td>{{ u.rol_id }}</td>
-          <td>{{ estadoLabel(u.activo) }}</td>
+          <td>{{ u.rol_nombre }}</td>
           <td>
+            <span class="badge" :class="u.activo ? 'badge-activo' : 'badge-inactivo'">
+              {{ u.activo ? 'Activo' : 'Inactivo' }}
+            </span>
+          </td>
+          <td class="td-acciones">
+            <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(u)">Editar</button>
             <button
-              class="btn-estado"
-              :class="u.activo ? 'btn-desactivar' : 'btn-activar'"
+              class="btn btn-sm"
+              :class="u.activo ? 'btn-danger' : 'btn-success'"
               @click="toggleEstado(u)"
             >
               {{ u.activo ? 'Desactivar' : 'Activar' }}
             </button>
           </td>
-          <td>
-            <button class="btn-editar" @click="iniciarEdicion(u)">Editar</button>
-          </td>
         </tr>
       </tbody>
     </table>
-
-    <p v-else>No hay usuarios registrados.</p>
-
-    <div v-if="editando" class="form-edicion">
-      <h2>Editar usuario</h2>
-
-      <div class="field">
-        <label for="edit-nombre">Nombre</label>
-        <input id="edit-nombre" v-model="formNombre" required />
-      </div>
-
-      <div class="field">
-        <label for="edit-correo">Correo</label>
-        <input id="edit-correo" v-model="formCorreo" type="email" required />
-      </div>
-
-      <div class="field">
-        <label for="edit-rol">Rol</label>
-        <input id="edit-rol" v-model.number="formRolId" type="number" required />
-      </div>
-
-      <div class="acciones">
-        <button class="btn-guardar" :disabled="guardando" @click="guardarCambios">
-          {{ guardando ? 'Guardando…' : 'Actualizar usuario' }}
-        </button>
-        <button class="btn-cancelar" @click="cancelarEdicion">Cancelar</button>
-      </div>
-    </div>
-  </template>
+  </div>
 </template>
 
 <style scoped>
+/* ——— Layout ——— */
+.page {
+  max-width: 1200px;
+}
+
+/* ——— Mensajes ——— */
+.msg {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
 .exito {
   background: #f0fdf4;
   color: #16a34a;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
 }
 
 .fallo {
   background: #fef2f2;
   color: #dc2626;
+}
+
+/* ——— Card ——— */
+.card {
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.card-title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #1e293b;
+}
+
+/* ——— Form ——— */
+.form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 180px;
+}
+
+.field span {
+  font-size: 0.8rem;
+  color: #475569;
+  font-weight: 500;
+}
+
+.field input,
+.field select {
   padding: 0.5rem 0.75rem;
+  border: 1px solid #e2e8f0;
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
 
-table {
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.field-sm {
+  flex: 0 0 100px;
+}
+
+.field-btn {
+  flex: 0 0 auto;
+  flex-direction: row;
+  gap: 0.5rem;
+}
+
+/* ——— Botones ——— */
+.btn {
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #1e293b;
+  color: #fff;
+  padding: 0.5rem 1rem;
+}
+
+.btn-primary:hover {
+  background: #334155;
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #334155;
+  padding: 0.5rem 1rem;
+}
+
+.btn-secondary:hover {
+  background: #cbd5e1;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.btn-danger {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.btn-danger:hover { background: #fee2e2; }
+
+.btn-success {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.btn-success:hover { background: #dcfce7; }
+
+/* ——— Badge ——— */
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-activo {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.badge-inactivo {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ——— Tabla ——— */
+.table {
   width: 100%;
   border-collapse: collapse;
   background: #fff;
   border-radius: 0.5rem;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  margin-top: 1rem;
 }
 
 th {
@@ -177,7 +408,7 @@ th {
   color: #475569;
   font-size: 0.8rem;
   font-weight: 600;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 2px solid #e2e8f0;
 }
 
 td {
@@ -187,127 +418,17 @@ td {
   color: #334155;
 }
 
-tr:last-child td {
-  border-bottom: none;
+tr:last-child td { border-bottom: none; }
+
+.th-acciones,
+.td-acciones {
+  text-align: right;
+  white-space: nowrap;
 }
 
-.btn-editar {
-  background: #e2e8f0;
-  border: none;
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.25rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-  color: #334155;
-}
-
-.btn-editar:hover {
-  background: #cbd5e1;
-}
-
-.btn-estado {
-  border: none;
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.25rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.btn-desactivar {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.btn-desactivar:hover {
-  background: #fee2e2;
-}
-
-.btn-activar {
-  background: #f0fdf4;
-  color: #16a34a;
-}
-
-.btn-activar:hover {
-  background: #dcfce7;
-}
-
-.form-edicion {
-  margin-top: 1.5rem;
-  background: #fff;
-  padding: 1.5rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  max-width: 480px;
-}
-
-.form-edicion h2 {
-  margin: 0 0 1rem;
-  font-size: 1.125rem;
-  color: #1e293b;
-}
-
-.field {
-  margin-bottom: 0.75rem;
-}
-
-.field label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.8rem;
-  color: #475569;
-}
-
-.field input {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  box-sizing: border-box;
-}
-
-.field input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
-}
-
-.acciones {
+.td-acciones {
   display: flex;
   gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.btn-guardar {
-  background: #1e293b;
-  color: #fff;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-.btn-guardar:hover {
-  background: #334155;
-}
-
-.btn-guardar:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-cancelar {
-  background: #e2e8f0;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  cursor: pointer;
-  color: #334155;
-}
-
-.btn-cancelar:hover {
-  background: #cbd5e1;
+  justify-content: flex-end;
 }
 </style>
