@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Usuario } from '@/types/auth'
-import { obtenerUsuarios } from '@/services/usuario.service'
+import type { Usuario, UsuarioUpdate } from '@/types/auth'
+import { obtenerUsuarios, actualizarUsuario } from '@/services/usuario.service'
 
 export const useUsuariosStore = defineStore('usuarios', () => {
   const usuarios = ref<Usuario[]>([])
@@ -16,5 +16,10 @@ export const useUsuariosStore = defineStore('usuarios', () => {
     }
   }
 
-  return { usuarios, cargando, cargarUsuarios }
+  async function actualizar(id: number, datos: UsuarioUpdate): Promise<void> {
+    await actualizarUsuario(id, datos)
+    await cargarUsuarios()
+  }
+
+  return { usuarios, cargando, cargarUsuarios, actualizar }
 })

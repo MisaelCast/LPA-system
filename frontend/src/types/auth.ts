@@ -15,3 +15,9 @@ export interface Usuario {
   activo: boolean
   rol_id: number
 }
+
+export interface UsuarioUpdate {
+  nombre?: string
+  correo?: string
+  rol_id?: number
+}
