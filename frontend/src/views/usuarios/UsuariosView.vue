@@ -53,6 +53,22 @@ async function guardarCambios() {
 function estadoLabel(activo: boolean): string {
   return activo ? 'Activo' : 'Inactivo'
 }
+
+async function toggleEstado(u: Usuario) {
+  const accion = u.activo ? 'desactivar' : 'activar'
+  if (!window.confirm(`¿Desea ${accion} este usuario?`)) return
+
+  mensaje.value = ''
+  error.value = ''
+
+  try {
+    await store.cambiarEstado(u.id, !u.activo)
+    const estado = u.activo ? 'desactivado' : 'activado'
+    mensaje.value = `Usuario ${estado} correctamente.`
+  } catch {
+    error.value = 'Error al cambiar el estado del usuario.'
+  }
+}
 </script>
 
 <template>
@@ -71,6 +87,7 @@ function estadoLabel(activo: boolean): string {
           <th>Correo</th>
           <th>Rol</th>
           <th>Estado</th>
+          <th>Acciones</th>
           <th></th>
         </tr>
       </thead>
@@ -80,6 +97,15 @@ function estadoLabel(activo: boolean): string {
           <td>{{ u.correo }}</td>
           <td>{{ u.rol_id }}</td>
           <td>{{ estadoLabel(u.activo) }}</td>
+          <td>
+            <button
+              class="btn-estado"
+              :class="u.activo ? 'btn-desactivar' : 'btn-activar'"
+              @click="toggleEstado(u)"
+            >
+              {{ u.activo ? 'Desactivar' : 'Activar' }}
+            </button>
+          </td>
           <td>
             <button class="btn-editar" @click="iniciarEdicion(u)">Editar</button>
           </td>
@@ -177,6 +203,32 @@ tr:last-child td {
 
 .btn-editar:hover {
   background: #cbd5e1;
+}
+
+.btn-estado {
+  border: none;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.btn-desactivar {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.btn-desactivar:hover {
+  background: #fee2e2;
+}
+
+.btn-activar {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.btn-activar:hover {
+  background: #dcfce7;
 }
 
 .form-edicion {

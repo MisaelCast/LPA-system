@@ -11,3 +11,12 @@ export function actualizarUsuario(
 ): Promise<Usuario> {
   return api.put<Usuario>(`/usuarios/${id}`, datos).then((res) => res.data)
 }
+
+export function cambiarEstadoUsuario(
+  id: number,
+  activo: boolean,
+): Promise<Usuario> {
+  return api
+    .patch<Usuario>(`/usuarios/${id}/estado`, { activo })
+    .then((res) => res.data)
+}
