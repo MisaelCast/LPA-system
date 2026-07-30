@@ -22,6 +22,7 @@ async function handleSubmit() {
       contrasena: contrasena.value,
     })
     authStore.setToken(token.access_token)
+    await authStore.cargarUsuario()
     router.push('/dashboard')
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'response' in err) {

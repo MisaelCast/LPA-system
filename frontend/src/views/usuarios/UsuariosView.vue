@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useUsuariosStore } from '@/stores/usuarios'
+import { useAuthStore } from '@/stores/auth'
 import { obtenerRoles } from '@/services/rol.service'
 import type { Usuario } from '@/types/auth'
 import type { Rol } from '@/types/rol'
 
 const store = useUsuariosStore()
+const authStore = useAuthStore()
 
 const roles = ref<Rol[]>([])
 
@@ -124,7 +126,7 @@ async function toggleEstado(u: Usuario) {
     <p v-if="error" class="msg fallo">{{ error }}</p>
 
     <!-- Formulario de creación -->
-    <form class="card" @submit.prevent="handleCrear">
+    <form v-if="authStore.isAdmin" class="card" @submit.prevent="handleCrear">
       <h2 class="card-title">Nuevo usuario</h2>
 
       <div class="form-row">
@@ -206,7 +208,7 @@ async function toggleEstado(u: Usuario) {
           <th>Correo</th>
           <th>Rol</th>
           <th>Estado</th>
-          <th class="th-acciones">Acciones</th>
+          <th v-if="authStore.isAdmin" class="th-acciones">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -219,7 +221,7 @@ async function toggleEstado(u: Usuario) {
               {{ u.activo ? 'Activo' : 'Inactivo' }}
             </span>
           </td>
-          <td class="td-acciones">
+          <td v-if="authStore.isAdmin" class="td-acciones">
             <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(u)">Editar</button>
             <button
               class="btn btn-sm"

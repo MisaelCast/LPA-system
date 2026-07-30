@@ -16,7 +16,7 @@ function handleLogout() {
     <aside class="sidebar">
       <nav>
         <RouterLink to="/dashboard">Dashboard</RouterLink>
-        <RouterLink to="/usuarios">Usuarios</RouterLink>
+        <RouterLink v-if="authStore.isAdmin" to="/usuarios">Usuarios</RouterLink>
       </nav>
     </aside>
 
@@ -24,7 +24,7 @@ function handleLogout() {
       <header class="header">
         <span class="brand">LPA System</span>
         <div class="header-right">
-          <span class="user">Administrador</span>
+          <span class="user">{{ authStore.usuario?.nombre || 'Usuario' }}</span>
           <button class="btn-logout" @click="handleLogout">Cerrar sesión</button>
         </div>
       </header>

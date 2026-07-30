@@ -1,12 +1,19 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { Usuario } from '@/types/auth'
+import { obtenerUsuarioActual } from '@/services/auth.service'
 
 const LOCAL_STORAGE_KEY = 'access_token'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem(LOCAL_STORAGE_KEY))
+  const usuario = ref<Usuario | null>(null)
 
   const isAuthenticated = computed(() => token.value !== null)
+
+  const isAdmin = computed(
+    () => usuario.value?.rol_nombre === 'Administrador',
+  )
 
   function setToken(value: string) {
     token.value = value
@@ -15,8 +22,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearToken() {
     token.value = null
+    usuario.value = null
     localStorage.removeItem(LOCAL_STORAGE_KEY)
   }
 
-  return { token, isAuthenticated, setToken, clearToken }
+  async function cargarUsuario() {
+    usuario.value = await obtenerUsuarioActual()
+  }
+
+  return { token, usuario, isAuthenticated, isAdmin, setToken, clearToken, cargarUsuario }
 })

@@ -2,6 +2,13 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import MainLayout from '@/layouts/MainLayout.vue'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    requiresAuth?: boolean
+    roles?: string[]
+  }
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -28,6 +35,7 @@ const router = createRouter({
           path: 'usuarios',
           name: 'usuarios',
           component: () => import('@/views/usuarios/UsuariosView.vue'),
+          meta: { roles: ['Administrador'] },
         },
       ],
     },
@@ -43,6 +51,13 @@ router.beforeEach((to, from) => {
 
   if (to.name === 'login' && authStore.isAuthenticated) {
     return { name: 'dashboard' }
+  }
+
+  const allowedRoles = to.meta.roles as string[] | undefined
+  if (allowedRoles && authStore.usuario) {
+    if (!allowedRoles.includes(authStore.usuario.rol_nombre)) {
+      return { name: 'dashboard' }
+    }
   }
 })
 
