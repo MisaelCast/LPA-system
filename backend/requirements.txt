@@ -5,3 +5,4 @@ pydantic-settings
 psycopg[binary]
 passlib[bcrypt]
 PyJWT
+email-validator>=2.2.0
