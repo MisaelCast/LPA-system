@@ -21,12 +21,16 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
-    backend_cors_origins: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ]
+    backend_cors_origins: str = ""
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Orígenes permitidos para CORS a partir de la variable separada por comas."""
+        return [
+            origin.strip()
+            for origin in self.backend_cors_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def database_url(self) -> str:
