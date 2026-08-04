@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy.engine import URL
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,14 +25,39 @@ class Settings(BaseSettings):
 
     backend_cors_origins: str = ""
 
-    @property
-    def cors_origins_list(self) -> list[str]:
-        """Orígenes permitidos para CORS a partir de la variable separada por comas."""
+    def _parse_origins_as_json(self, raw: str) -> list[str] | None:
+        """Intenta interpretar la cadena como una lista JSON de orígenes."""
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+            return [item.strip() for item in parsed if item.strip()]
+        return None
+
+    def _parse_origins_as_csv(self, raw: str) -> list[str]:
+        """Interpreta la cadena como orígenes separados por coma."""
         return [
             origin.strip()
-            for origin in self.backend_cors_origins.split(",")
+            for origin in raw.split(",")
             if origin.strip()
         ]
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Orígenes permitidos para CORS.
+
+        Soporta tanto formato CSV (separado por comas) como JSON (lista de cadenas).
+        """
+        if not self.backend_cors_origins:
+            return []
+
+        json_origins = self._parse_origins_as_json(self.backend_cors_origins)
+        if json_origins is not None:
+            return json_origins
+
+        return self._parse_origins_as_csv(self.backend_cors_origins)
 
     @property
     def database_url(self) -> str:
