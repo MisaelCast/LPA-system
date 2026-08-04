@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
+    default_admin_password: str = "admin123"
+
     backend_cors_origins: str = ""
 
     def _parse_origins_as_json(self, raw: str) -> list[str] | None:

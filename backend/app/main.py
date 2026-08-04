@@ -9,11 +9,13 @@ from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
 from app.db.database import create_db_and_tables
+from app.seed import seed_inicial
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_db_and_tables()
+    seed_inicial()
     yield
 
 
