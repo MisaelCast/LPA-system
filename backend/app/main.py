@@ -26,6 +26,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+print("RAW CORS:", repr(settings.backend_cors_origins))
+print("PARSED CORS:", settings.cors_origins_list)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
