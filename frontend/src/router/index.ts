@@ -42,7 +42,7 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, from) => {
+router.beforeEach(async (to, from) => {
   const authStore = useAuthStore()
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
@@ -53,10 +53,21 @@ router.beforeEach((to, from) => {
     return { name: 'dashboard' }
   }
 
+  // Cargar datos del usuario si hay token pero no están en memoria (recarga de página)
+  if (authStore.isAuthenticated && !authStore.usuario) {
+    try {
+      await authStore.cargarUsuario()
+    } catch {
+      authStore.clearToken()
+      return { name: 'login' }
+    }
+  }
+
+  // Validar rol requerido por la ruta
   const allowedRoles = to.meta.roles as string[] | undefined
   if (allowedRoles && authStore.usuario) {
     if (!allowedRoles.includes(authStore.usuario.rol_nombre)) {
-      return { name: 'dashboard' }
+      return { name: 'dashboard', query: { sin_permisos: '1' } }
     }
   }
 })

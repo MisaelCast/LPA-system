@@ -1,9 +1,27 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const avisoPermisos = ref(false)
+
+watch(
+  () => route.query.sin_permisos,
+  (val) => {
+    if (val) {
+      avisoPermisos.value = true
+      router.replace({ query: {} })
+      setTimeout(() => {
+        avisoPermisos.value = false
+      }, 5000)
+    }
+  },
+  { immediate: true },
+)
 
 function handleLogout() {
   authStore.clearToken()
@@ -30,6 +48,9 @@ function handleLogout() {
       </header>
 
       <main class="content">
+        <p v-if="avisoPermisos" class="aviso-permisos">
+          No tiene permisos para acceder a esa sección.
+        </p>
         <RouterView />
       </main>
     </div>
@@ -110,5 +131,15 @@ function handleLogout() {
 .content {
   flex: 1;
   padding: 1.5rem;
+}
+
+.aviso-permisos {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
 }
 </style>

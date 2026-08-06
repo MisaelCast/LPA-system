@@ -18,6 +18,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       console.warn('Token inválido o expirado.')
     }
+    if (error.response?.status === 403) {
+      console.warn('No tiene permisos para realizar esta acción.')
+    }
     return Promise.reject(error)
   },
 )

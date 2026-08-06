@@ -56,7 +56,11 @@ async function handleCrear() {
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'response' in err) {
       const axiosErr = err as { response: { status: number; data?: { detail?: string } } }
-      error.value = axiosErr.response.data?.detail || 'Error al crear el usuario.'
+      if (axiosErr.response.status === 403) {
+        error.value = 'No tiene permisos para realizar esta acción.'
+      } else {
+        error.value = axiosErr.response.data?.detail || 'Error al crear el usuario.'
+      }
     } else {
       error.value = 'Error al crear el usuario.'
     }
@@ -92,8 +96,15 @@ async function guardarCambios() {
     })
     mensaje.value = 'Usuario actualizado correctamente.'
     editando.value = null
-  } catch {
-    error.value = 'Error al actualizar el usuario.'
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'response' in err) {
+      const axiosErr = err as { response: { status: number } }
+      error.value = axiosErr.response.status === 403
+        ? 'No tiene permisos para realizar esta acción.'
+        : 'Error al actualizar el usuario.'
+    } else {
+      error.value = 'Error al actualizar el usuario.'
+    }
   } finally {
     guardando.value = false
   }
@@ -111,8 +122,15 @@ async function toggleEstado(u: Usuario) {
     await store.cambiarEstado(u.id, !u.activo)
     const estado = u.activo ? 'desactivado' : 'activado'
     mensaje.value = `Usuario ${estado} correctamente.`
-  } catch {
-    error.value = 'Error al cambiar el estado del usuario.'
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'response' in err) {
+      const axiosErr = err as { response: { status: number } }
+      error.value = axiosErr.response.status === 403
+        ? 'No tiene permisos para realizar esta acción.'
+        : 'Error al cambiar el estado del usuario.'
+    } else {
+      error.value = 'Error al cambiar el estado del usuario.'
+    }
   }
 }
 </script>
