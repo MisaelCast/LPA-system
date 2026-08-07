@@ -2,38 +2,40 @@
 import { onMounted, ref } from 'vue'
 import { useAreasStore } from '@/stores/areas'
 import { useAuthStore } from '@/stores/auth'
-import type { Area, Celula } from '@/types/area'
+import type { Area } from '@/types/area'
 
 const store = useAreasStore()
 const authStore = useAuthStore()
 
-/* --- Área: creación --- */
-const crearNombre = ref('')
-const creando = ref(false)
+/* --- Formulario compacto de creación --- */
+const formNombre = ref('')
+const formCelulas = ref('')
+const formGuardando = ref(false)
 
-/* --- Área: edición --- */
-const editando = ref<Area | null>(null)
-const editNombre = ref('')
-const guardando = ref(false)
+/* --- Edición inline de área --- */
+const areaEditandoId = ref<number | null>(null)
+const areaEditNombre = ref('')
+const areaEditGuardando = ref(false)
 
-/* --- Área expandida para ver/mostrar células --- */
-const areaExpandida = ref<number | null>(null)
-
-/* --- Célula: creación --- */
-const nuevaCelulaNumero = ref<number | null>(null)
-const creandoCelula = ref(false)
-
-/* --- Célula: edición --- */
-const celulaEditando = ref<Celula | null>(null)
+/* --- Edición inline de célula --- */
+const celulaEditandoId = ref<number | null>(null)
 const celulaEditNumero = ref<number | null>(null)
-const guardandoCelula = ref(false)
+const celulaEditGuardando = ref(false)
+
+/* --- Agregar célula inline --- */
+const areaAgregandoCelulaId = ref<number | null>(null)
+const nuevaCelulaNumero = ref<number | null>(null)
+const celulaAgregando = ref(false)
 
 /* --- Mensajes --- */
 const mensaje = ref('')
 const error = ref('')
 
-onMounted(() => {
-  store.cargarAreas()
+onMounted(async () => {
+  await store.cargarAreas()
+  if (store.areas.length > 0) {
+    await store.cargarTodasLasCelulas(store.areas.map((a) => a.id))
+  }
 })
 
 function mostrarError(prefix: string, err: unknown) {
@@ -49,52 +51,70 @@ function mostrarError(prefix: string, err: unknown) {
   }
 }
 
-/* ——— Área: CRUD ——— */
+function parsearCelulas(raw: string): number[] {
+  return raw
+    .split(',')
+    .map((n) => Number(n.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0)
+}
+
+/* ——— Crear área + células ——— */
 async function handleCrear() {
   mensaje.value = ''
   error.value = ''
-  creando.value = true
+  formGuardando.value = true
 
   try {
-    await store.crear({ nombre: crearNombre.value, activa: true })
+    const area = await store.crear({ nombre: formNombre.value, activa: true })
+    const numeros = parsearCelulas(formCelulas.value)
+
+    for (const numero of numeros) {
+      try {
+        await store.crearCelulaEnArea(area.id, { numero, activa: true })
+      } catch (err: unknown) {
+        mostrarError(`agregar la célula ${numero}`, err)
+      }
+    }
+    await store.cargarCelulas(area.id)
     mensaje.value = 'Área creada correctamente.'
-    crearNombre.value = ''
+    formNombre.value = ''
+    formCelulas.value = ''
   } catch (err: unknown) {
     mostrarError('crear el área', err)
   } finally {
-    creando.value = false
+    formGuardando.value = false
   }
 }
 
+/* ——— Editar área ——— */
 function iniciarEdicion(a: Area) {
-  editando.value = a
-  editNombre.value = a.nombre
-  mensaje.value = ''
-  error.value = ''
-  // Al editar, expandir las células automáticamente
-  toggleCélulas(a.id)
+  areaEditandoId.value = a.id
+  areaEditNombre.value = a.nombre
 }
 
-function cancelarEdicion() {
-  editando.value = null
+function cancelarEdicionArea() {
+  areaEditandoId.value = null
+  areaEditNombre.value = ''
 }
 
-async function guardarCambios() {
-  if (!editando.value) return
+async function guardarEdicionArea() {
+  if (!areaEditandoId.value) return
   error.value = ''
-  guardando.value = true
+  areaEditGuardando.value = true
 
   try {
-    await store.actualizar(editando.value.id, { nombre: editNombre.value })
+    await store.actualizar(areaEditandoId.value, { nombre: areaEditNombre.value })
     mensaje.value = 'Área actualizada correctamente.'
-    editando.value = null
+    areaEditandoId.value = null
+    areaEditNombre.value = ''
   } catch (err: unknown) {
     mostrarError('actualizar el área', err)
   } finally {
-    guardando.value = false
+    areaEditGuardando.value = false
   }
 }
 
+/* ——— Activar/Desactivar área ——— */
 async function toggleEstadoArea(a: Area) {
   const accion = a.activa ? 'desactivar' : 'activar'
   if (!window.confirm(`¿Desea ${accion} esta área?`)) return
@@ -111,80 +131,76 @@ async function toggleEstadoArea(a: Area) {
   }
 }
 
-/* ——— Células: expandir/colapsar ——— */
-function toggleCélulas(areaId: number) {
-  if (areaExpandida.value === areaId) {
-    areaExpandida.value = null
-    return
-  }
-  areaExpandida.value = areaId
-  store.cargarCelulas(areaId)
+/* ——— Agregar célula inline ——— */
+function mostrarInputCelula(areaId: number) {
+  areaAgregandoCelulaId.value = areaId
+  nuevaCelulaNumero.value = null
+  error.value = ''
 }
 
-/* ——— Célula: CRUD ——— */
-async function agregarCelula() {
-  if (!areaExpandida.value || !nuevaCelulaNumero.value) return
+function cancelarAgregarCelula() {
+  areaAgregandoCelulaId.value = null
+  nuevaCelulaNumero.value = null
+}
+
+async function confirmarAgregarCelula() {
+  if (!areaAgregandoCelulaId.value || !nuevaCelulaNumero.value) return
   error.value = ''
-  creandoCelula.value = true
+  celulaAgregando.value = true
 
   try {
-    await store.crearCelulaEnArea(areaExpandida.value, {
+    await store.crearCelulaEnArea(areaAgregandoCelulaId.value, {
       numero: nuevaCelulaNumero.value,
       activa: true,
     })
     mensaje.value = 'Célula agregada correctamente.'
+    areaAgregandoCelulaId.value = null
     nuevaCelulaNumero.value = null
   } catch (err: unknown) {
     mostrarError('agregar la célula', err)
   } finally {
-    creandoCelula.value = false
+    celulaAgregando.value = false
   }
 }
 
-function iniciarEdicionCelula(c: Celula) {
-  celulaEditando.value = c
-  celulaEditNumero.value = c.numero
-  mensaje.value = ''
+/* ——— Editar célula inline ——— */
+function iniciarEdicionCelula(celulaId: number, numeroActual: number) {
+  celulaEditandoId.value = celulaId
+  celulaEditNumero.value = numeroActual
   error.value = ''
 }
 
 function cancelarEdicionCelula() {
-  celulaEditando.value = null
+  celulaEditandoId.value = null
   celulaEditNumero.value = null
 }
 
-async function guardarCambiosCelula() {
-  if (!celulaEditando.value || !areaExpandida.value || !celulaEditNumero.value) return
+async function guardarEdicionCelula(areaId: number) {
+  if (!celulaEditandoId.value || !celulaEditNumero.value) return
   error.value = ''
-  guardandoCelula.value = true
+  celulaEditGuardando.value = true
 
   try {
-    await store.actualizarCelulaEnArea(
-      celulaEditando.value.id,
-      areaExpandida.value,
-      { numero: celulaEditNumero.value },
-    )
+    await store.actualizarCelulaEnArea(celulaEditandoId.value, areaId, {
+      numero: celulaEditNumero.value,
+    })
     mensaje.value = 'Célula actualizada correctamente.'
-    celulaEditando.value = null
+    celulaEditandoId.value = null
     celulaEditNumero.value = null
   } catch (err: unknown) {
     mostrarError('actualizar la célula', err)
   } finally {
-    guardandoCelula.value = false
+    celulaEditGuardando.value = false
   }
 }
 
-async function toggleEstadoCelula(c: Celula) {
-  if (!areaExpandida.value) return
-  const accion = c.activa ? 'desactivar' : 'activar'
-  if (!window.confirm(`¿Desea ${accion} esta célula?`)) return
-
-  mensaje.value = ''
+/* ——— Activar/Desactivar célula ——— */
+async function toggleEstadoCelula(celulaId: number, areaId: number, activa: boolean) {
   error.value = ''
 
   try {
-    await store.cambiarEstadoCelulaEnArea(c.id, areaExpandida.value, !c.activa)
-    const estado = c.activa ? 'desactivada' : 'activada'
+    await store.cambiarEstadoCelulaEnArea(celulaId, areaId, !activa)
+    const estado = activa ? 'desactivada' : 'activada'
     mensaje.value = `Célula ${estado} correctamente.`
   } catch (err: unknown) {
     mostrarError('cambiar el estado de la célula', err)
@@ -194,349 +210,554 @@ async function toggleEstadoCelula(c: Celula) {
 
 <template>
   <div class="page">
-    <h1>Áreas</h1>
+    <h1>Áreas y células</h1>
 
-    <!-- Mensajes -->
-    <p v-if="mensaje" class="msg exito">{{ mensaje }}</p>
-    <p v-if="error" class="msg fallo">{{ error }}</p>
+    <p v-if="mensaje" class="msg msg-ok">{{ mensaje }}</p>
+    <p v-if="error" class="msg msg-err">{{ error }}</p>
 
-    <!-- Formulario de creación de área -->
-    <form v-if="authStore.isAdmin" class="card" @submit.prevent="handleCrear">
-      <h2 class="card-title">Nueva área</h2>
-
-      <div class="form-row">
-        <label class="field">
-          <span>Nombre</span>
-          <input v-model="crearNombre" required />
+    <!-- Formulario compacto -->
+    <form v-if="authStore.isAdmin" class="bar" @submit.prevent="handleCrear">
+      <div class="bar-fields">
+        <label class="bar-field bar-field--name">
+          <span>Nombre del área</span>
+          <input v-model="formNombre" placeholder="Ej: Ensamble Final" required />
         </label>
-
-        <div class="field field-btn">
-          <button class="btn btn-primary" type="submit" :disabled="creando">
-            {{ creando ? 'Creando…' : 'Crear área' }}
-          </button>
-        </div>
+        <label class="bar-field bar-field--cells">
+          <span>Células</span>
+          <input
+            v-model="formCelulas"
+            placeholder="1,2,3,4"
+            title="Números de célula separados por coma"
+          />
+        </label>
       </div>
+      <button class="btn btn-dark" type="submit" :disabled="formGuardando">
+        {{ formGuardando ? 'Guardando…' : 'Guardar área' }}
+      </button>
     </form>
 
-    <!-- Formulario de edición de área -->
-    <form v-if="editando" class="card" @submit.prevent="guardarCambios">
-      <h2 class="card-title">Editar área</h2>
+    <div v-if="store.cargando" class="msg msg-info">Cargando…</div>
 
-      <div class="form-row">
-        <label class="field">
-          <span>Nombre</span>
-          <input v-model="editNombre" required />
-        </label>
-
-        <div class="field field-btn">
-          <button class="btn btn-primary" type="submit" :disabled="guardando">
-            {{ guardando ? 'Guardando…' : 'Actualizar' }}
-          </button>
-          <button class="btn btn-secondary" type="button" @click="cancelarEdicion">
-            Cancelar
-          </button>
-        </div>
-      </div>
-    </form>
-
-    <!-- Tabla de áreas -->
-    <div v-if="store.cargando" class="card">Cargando…</div>
-
-    <div v-else-if="store.areas.length === 0" class="card">
+    <div v-else-if="store.areas.length === 0" class="msg msg-info">
       No hay áreas registradas.
     </div>
 
+    <!-- Tabla única -->
     <table v-else class="table">
       <thead>
         <tr>
-          <th>Nombre</th>
-          <th>Estado</th>
-          <th v-if="authStore.isAdmin" class="th-acciones">Acciones</th>
+          <th class="col-area">Área</th>
+          <th class="col-estado">Estado</th>
+          <th class="col-celulas">Células</th>
+          <th v-if="authStore.isAdmin" class="col-acciones">Acciones</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="a in store.areas" :key="a.id">
-          <td>{{ a.nombre }}</td>
-          <td>
-            <span class="badge" :class="a.activa ? 'badge-activo' : 'badge-inactivo'">
+        <tr
+          v-for="a in store.areas"
+          :key="a.id"
+          :class="{ 'row-inactiva': !a.activa }"
+        >
+          <!-- Nombre del área o input de edición -->
+          <td class="col-area">
+            <template v-if="areaEditandoId === a.id">
+              <input
+                v-model="areaEditNombre"
+                class="inline-input"
+                @keyup.escape="cancelarEdicionArea"
+                @keyup.enter="guardarEdicionArea"
+              />
+              <span class="inline-actions">
+                <button
+                  class="chip-btn chip-btn--ok"
+                  :disabled="areaEditGuardando"
+                  @click="guardarEdicionArea"
+                >
+                  ✓
+                </button>
+                <button class="chip-btn chip-btn--cancel" @click="cancelarEdicionArea">
+                  ✕
+                </button>
+              </span>
+            </template>
+            <template v-else>
+              {{ a.nombre }}
+            </template>
+          </td>
+
+          <!-- Estado -->
+          <td class="col-estado">
+            <span class="badge" :class="a.activa ? 'badge-on' : 'badge-off'">
               {{ a.activa ? 'Activa' : 'Inactiva' }}
             </span>
           </td>
-          <td v-if="authStore.isAdmin" class="td-acciones">
-            <button
-              class="btn btn-sm"
-              :class="areaExpandida === a.id ? 'btn-outline-dark' : 'btn-outline'"
-              @click="toggleCélulas(a.id)"
-            >
-              {{ areaExpandida === a.id ? 'Ocultar células' : 'Células' }}
-            </button>
-            <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(a)">
-              Editar
-            </button>
-            <button
-              class="btn btn-sm"
-              :class="a.activa ? 'btn-danger' : 'btn-success'"
-              @click="toggleEstadoArea(a)"
-            >
-              {{ a.activa ? 'Desactivar' : 'Activar' }}
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
 
-    <!-- Sección de células para el área expandida -->
-    <div v-if="areaExpandida !== null && authStore.isAdmin" class="celulas-section">
-      <h2 class="section-title">Células</h2>
-
-      <!-- Agregar célula -->
-      <form class="card" @submit.prevent="agregarCelula">
-        <h3 class="card-title">Agregar célula</h3>
-
-        <div class="form-row">
-          <label class="field field-sm">
-            <span>Número</span>
-            <input
-              v-model.number="nuevaCelulaNumero"
-              type="number"
-              min="1"
-              required
-            />
-          </label>
-
-          <div class="field field-btn">
-            <button class="btn btn-primary" type="submit" :disabled="creandoCelula">
-              {{ creandoCelula ? 'Agregando…' : 'Agregar' }}
-            </button>
-          </div>
-        </div>
-      </form>
-
-      <!-- Editar célula -->
-      <form v-if="celulaEditando" class="card" @submit.prevent="guardarCambiosCelula">
-        <h3 class="card-title">Editar célula</h3>
-
-        <div class="form-row">
-          <label class="field field-sm">
-            <span>Número</span>
-            <input
-              v-model.number="celulaEditNumero"
-              type="number"
-              min="1"
-              required
-            />
-          </label>
-
-          <div class="field field-btn">
-            <button class="btn btn-primary" type="submit" :disabled="guardandoCelula">
-              {{ guardandoCelula ? 'Guardando…' : 'Actualizar' }}
-            </button>
-            <button
-              class="btn btn-secondary"
-              type="button"
-              @click="cancelarEdicionCelula"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      </form>
-
-      <!-- Tabla de células -->
-      <div v-if="store.cargandoCelulas" class="card">Cargando células…</div>
-
-      <div v-else-if="store.celulas.length === 0" class="card">
-        No hay células registradas en esta área.
-      </div>
-
-      <table v-else class="table">
-        <thead>
-          <tr>
-            <th>Número</th>
-            <th>Estado</th>
-            <th class="th-acciones">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in store.celulas" :key="c.id">
-            <td>{{ c.numero }}</td>
-            <td>
-              <span class="badge" :class="c.activa ? 'badge-activo' : 'badge-inactivo'">
-                {{ c.activa ? 'Activa' : 'Inactiva' }}
-              </span>
-            </td>
-            <td class="td-acciones">
-              <button
-                class="btn btn-sm btn-secondary"
-                @click="iniciarEdicionCelula(c)"
+          <!-- Células -->
+          <td class="col-celulas">
+            <div class="chips">
+              <template
+                v-for="c in store.celulasDe(a.id)"
+                :key="c.id"
               >
+                <!-- Chip en edición -->
+                <span
+                  v-if="celulaEditandoId === c.id"
+                  class="chip chip-editing"
+                >
+                  <input
+                    v-model.number="celulaEditNumero"
+                    type="number"
+                    min="1"
+                    class="chip-input"
+                    @keyup.escape="cancelarEdicionCelula"
+                    @keyup.enter="guardarEdicionCelula(a.id)"
+                  />
+                  <button
+                    class="chip-btn chip-btn--ok"
+                    :disabled="celulaEditGuardando"
+                    @click="guardarEdicionCelula(a.id)"
+                  >
+                    ✓
+                  </button>
+                  <button class="chip-btn chip-btn--cancel" @click="cancelarEdicionCelula">
+                    ✕
+                  </button>
+                </span>
+
+                <!-- Chip normal -->
+                <span
+                  v-else
+                  class="chip"
+                  :class="{ 'chip-off': !c.activa }"
+                >
+                  <span class="chip-num">{{ c.numero }}</span>
+                  <button
+                    v-if="authStore.isAdmin"
+                    class="chip-btn"
+                    title="Editar número"
+                    @click="iniciarEdicionCelula(c.id, c.numero)"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    v-if="authStore.isAdmin"
+                    class="chip-btn"
+                    :title="c.activa ? 'Desactivar' : 'Activar'"
+                    @click="toggleEstadoCelula(c.id, a.id, c.activa)"
+                  >
+                    {{ c.activa ? '✕' : '↺' }}
+                  </button>
+                </span>
+              </template>
+
+              <!-- Input para agregar nueva célula -->
+              <span
+                v-if="areaAgregandoCelulaId === a.id"
+                class="chip chip-editing"
+              >
+                <input
+                  v-model.number="nuevaCelulaNumero"
+                  type="number"
+                  min="1"
+                  placeholder="N°"
+                  class="chip-input"
+                  @keyup.escape="cancelarAgregarCelula"
+                  @keyup.enter="confirmarAgregarCelula"
+                />
+                <button
+                  class="chip-btn chip-btn--ok"
+                  :disabled="celulaAgregando"
+                  @click="confirmarAgregarCelula"
+                >
+                  ✓
+                </button>
+                <button class="chip-btn chip-btn--cancel" @click="cancelarAgregarCelula">
+                  ✕
+                </button>
+              </span>
+
+              <!-- Botón Agregar célula -->
+              <button
+                v-if="authStore.isAdmin && areaAgregandoCelulaId !== a.id"
+                class="chip chip-add"
+                @click="mostrarInputCelula(a.id)"
+              >
+                + Agregar
+              </button>
+            </div>
+          </td>
+
+          <!-- Acciones -->
+          <td v-if="authStore.isAdmin" class="col-acciones">
+            <template v-if="areaEditandoId === a.id">
+              <!-- ya se muestran los botones en el td de nombre -->
+            </template>
+            <template v-else>
+              <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(a)">
                 Editar
               </button>
               <button
                 class="btn btn-sm"
-                :class="c.activa ? 'btn-danger' : 'btn-success'"
-                @click="toggleEstadoCelula(c)"
+                :class="a.activa ? 'btn-danger' : 'btn-success'"
+                @click="toggleEstadoArea(a)"
               >
-                {{ c.activa ? 'Desactivar' : 'Activar' }}
+                {{ a.activa ? 'Desactivar' : 'Activar' }}
               </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            </template>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </template>
 
 <style scoped>
-/* ——— Layout ——— */
+/* --- Layout --- */
 .page {
-  max-width: 1200px;
+  max-width: 1400px;
 }
 
-/* ——— Mensajes ——— */
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  color: #1e293b;
+}
+
+/* --- Mensajes --- */
 .msg {
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
 }
 
-.exito {
+.msg-ok {
   background: #f0fdf4;
   color: #16a34a;
 }
 
-.fallo {
+.msg-err {
   background: #fef2f2;
   color: #dc2626;
 }
 
-/* ——— Card ——— */
-.card {
-  background: #fff;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 1.25rem;
+.msg-info {
+  background: #f8fafc;
+  color: #64748b;
 }
 
-.card-title {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  color: #1e293b;
-}
-
-/* ——— Sección de células ——— */
-.celulas-section {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 2px solid #e2e8f0;
-}
-
-.section-title {
-  margin: 0 0 1rem;
-  font-size: 1.125rem;
-  color: #1e293b;
-}
-
-/* ——— Form ——— */
-.form-row {
+/* --- Barra de formulario --- */
+.bar {
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  background: #fff;
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #e2e8f0;
 }
 
-.field {
+.bar-fields {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.bar-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  flex: 1 1 200px;
+  gap: 0.15rem;
 }
 
-.field span {
-  font-size: 0.8rem;
-  color: #475569;
-  font-weight: 500;
+.bar-field span {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
-.field input {
-  padding: 0.5rem 0.75rem;
+.bar-field input {
+  padding: 0.4rem 0.6rem;
   border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  min-width: 0;
 }
 
-.field input:focus {
+.bar-field input:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 1px #3b82f6;
 }
 
-.field-sm {
-  flex: 0 0 100px;
+.bar-field--name {
+  flex: 1 1 250px;
 }
 
-.field-btn {
-  flex: 0 0 auto;
-  flex-direction: row;
-  gap: 0.5rem;
+.bar-field--cells {
+  flex: 0 0 160px;
 }
 
-/* ——— Botones ——— */
+/* --- Tabla --- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 0.375rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+}
+
+th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.85rem;
+  color: #334155;
+  vertical-align: middle;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.row-inactiva {
+  opacity: 0.5;
+}
+
+.col-area {
+  width: 25%;
+}
+
+.col-estado {
+  width: 10%;
+}
+
+.col-celulas {
+  width: 47%;
+}
+
+.col-acciones {
+  width: 18%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* --- Chips --- */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  min-height: 2rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.15rem 0.125rem 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #334155;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.chip-off {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.chip-num {
+  min-width: 1rem;
+  text-align: center;
+}
+
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: none;
+  background: transparent;
+  border-radius: 0.15rem;
+  cursor: pointer;
+  font-size: 0.65rem;
+  line-height: 1;
+  padding: 0;
+  color: #94a3b8;
+  transition: color 0.15s, background 0.15s;
+}
+
+.chip-btn:hover {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.chip-btn--ok {
+  color: #16a34a;
+}
+
+.chip-btn--ok:hover {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.chip-btn--cancel {
+  color: #dc2626;
+}
+
+.chip-btn--cancel:hover {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+.chip-add {
+  cursor: pointer;
+  background: transparent;
+  border: 1px dashed #cbd5e1;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.chip-add:hover {
+  color: #475569;
+  border-color: #94a3b8;
+}
+
+.chip-editing {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  gap: 0.15rem;
+  padding: 0.125rem 0.15rem;
+}
+
+.chip-input {
+  width: 2.5rem;
+  padding: 0.15rem 0.25rem;
+  border: 1px solid #93c5fd;
+  border-radius: 0.15rem;
+  font-size: 0.8rem;
+  text-align: center;
+  background: #fff;
+  -moz-appearance: textfield;
+}
+
+.chip-input::-webkit-inner-spin-button,
+.chip-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.chip-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+/* --- Input inline en celda --- */
+.inline-input {
+  width: calc(100% - 3rem);
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #93c5fd;
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  background: #eff6ff;
+}
+
+.inline-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.inline-actions {
+  display: inline-flex;
+  gap: 0.15rem;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
+/* --- Badges --- */
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.badge-on {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.badge-off {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* --- Botones --- */
 .btn {
   border: none;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
+  vertical-align: middle;
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn-primary {
+.btn-dark {
   background: #1e293b;
   color: #fff;
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
 }
 
-.btn-primary:hover {
+.btn-dark:hover {
   background: #334155;
 }
 
 .btn-secondary {
   background: #e2e8f0;
   color: #334155;
-  padding: 0.5rem 1rem;
+  padding: 0.3rem 0.6rem;
 }
 
 .btn-secondary:hover {
   background: #cbd5e1;
 }
 
-.btn-outline {
-  background: transparent;
-  color: #475569;
-  border: 1px solid #cbd5e1;
-  padding: 0.25rem 0.75rem;
-}
-
-.btn-outline:hover {
-  background: #f1f5f9;
-}
-
-.btn-outline-dark {
-  background: #1e293b;
-  color: #fff;
-  border: 1px solid #1e293b;
-  padding: 0.25rem 0.75rem;
-}
-
 .btn-sm {
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
 }
 
 .btn-danger {
@@ -544,72 +765,22 @@ async function toggleEstadoCelula(c: Celula) {
   color: #dc2626;
 }
 
-.btn-danger:hover { background: #fee2e2; }
+.btn-danger:hover {
+  background: #fee2e2;
+}
 
 .btn-success {
   background: #f0fdf4;
   color: #16a34a;
 }
 
-.btn-success:hover { background: #dcfce7; }
-
-/* ——— Badge ——— */
-.badge {
-  display: inline-block;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.badge-activo {
+.btn-success:hover {
   background: #dcfce7;
-  color: #16a34a;
 }
 
-.badge-inactivo {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-/* ——— Tabla ——— */
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-th {
-  text-align: left;
-  padding: 0.75rem 1rem;
-  background: #f8fafc;
-  color: #475569;
-  font-size: 0.8rem;
-  font-weight: 600;
-  border-bottom: 2px solid #e2e8f0;
-}
-
-td {
-  padding: 0.625rem 1rem;
-  border-bottom: 1px solid #f1f5f9;
-  font-size: 0.875rem;
-  color: #334155;
-}
-
-tr:last-child td { border-bottom: none; }
-
-.th-acciones,
-.td-acciones {
-  text-align: right;
-  white-space: nowrap;
-}
-
-.td-acciones {
+.col-acciones {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.35rem;
   justify-content: flex-end;
 }
 </style>

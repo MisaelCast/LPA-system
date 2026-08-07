@@ -36,22 +36,36 @@ export const useAreasStore = defineStore('areas', () => {
     await cargarAreas()
   }
 
-  async function crear(datos: AreaCreate): Promise<void> {
-    await crearArea(datos)
+  async function crear(datos: AreaCreate): Promise<Area> {
+    const area = await crearArea(datos)
     await cargarAreas()
+    return area
   }
 
-  /* --- Células --- */
-  const celulas = ref<Celula[]>([])
-  const cargandoCelulas = ref(false)
+  /* --- Células: mapa por área --- */
+  const celulasPorArea = ref<Record<number, Celula[]>>({})
+
+  function celulasDe(areaId: number): Celula[] {
+    return celulasPorArea.value[areaId] ?? []
+  }
 
   async function cargarCelulas(areaId: number) {
-    cargandoCelulas.value = true
-    try {
-      celulas.value = await obtenerCelulas(areaId)
-    } finally {
-      cargandoCelulas.value = false
+    celulasPorArea.value[areaId] = await obtenerCelulas(areaId)
+  }
+
+  async function cargarTodasLasCelulas(areaIds: number[]) {
+    const resultados = await Promise.all(
+      areaIds.map((id) =>
+        obtenerCelulas(id)
+          .then((celulas) => [id, celulas] as const)
+          .catch(() => [id, [] as Celula[]] as const),
+      ),
+    )
+    const mapa: Record<number, Celula[]> = {}
+    for (const [id, celulas] of resultados) {
+      mapa[id] = celulas
     }
+    celulasPorArea.value = mapa
   }
 
   async function crearCelulaEnArea(areaId: number, datos: CelulaCreate): Promise<void> {
@@ -84,9 +98,10 @@ export const useAreasStore = defineStore('areas', () => {
     actualizar,
     cambiarEstado,
     crear,
-    celulas,
-    cargandoCelulas,
+    celulasPorArea,
+    celulasDe,
     cargarCelulas,
+    cargarTodasLasCelulas,
     crearCelulaEnArea,
     actualizarCelulaEnArea,
     cambiarEstadoCelulaEnArea,
