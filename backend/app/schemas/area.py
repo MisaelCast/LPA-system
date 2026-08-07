@@ -24,3 +24,9 @@ class AreaUpdate(SQLModel):
 
 class AreaRead(AreaBase):
     id: int
+
+
+class AreaEstadoUpdate(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    activa: bool

@@ -5,24 +5,27 @@ from sqlmodel import Field, SQLModel
 class CelulaBase(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
-    nombre: str = Field(max_length=150)
-    descripcion: str | None = Field(default=None, max_length=255)
+    numero: int = Field(ge=1)
     activa: bool = Field(default=True)
 
 
 class CelulaCreate(CelulaBase):
-    area_id: int
+    pass
 
 
 class CelulaUpdate(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
-    nombre: str | None = Field(default=None, max_length=150)
-    descripcion: str | None = Field(default=None, max_length=255)
+    numero: int | None = Field(default=None, ge=1)
     activa: bool | None = None
-    area_id: int | None = None
 
 
 class CelulaRead(CelulaBase):
     id: int
     area_id: int
+
+
+class CelulaEstadoUpdate(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    activa: bool

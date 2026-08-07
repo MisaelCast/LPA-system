@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -11,10 +12,10 @@ class Celula(SQLModel, table=True):
     """Linea o celula de produccion dentro de un area."""
 
     __tablename__ = "celula"
+    __table_args__ = (UniqueConstraint("area_id", "numero"),)
 
     id: int | None = Field(default=None, primary_key=True)
-    nombre: str = Field(max_length=150, index=True)
-    descripcion: str | None = Field(default=None, max_length=255)
+    numero: int
     activa: bool = Field(default=True)
     area_id: int = Field(foreign_key="area.id")
 

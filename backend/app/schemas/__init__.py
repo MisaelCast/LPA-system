@@ -6,7 +6,7 @@ from app.schemas.auditoria import (
     AuditoriaUpdate,
 )
 from app.schemas.capa import CapaBase, CapaCreate, CapaRead, CapaUpdate
-from app.schemas.celula import CelulaBase, CelulaCreate, CelulaRead, CelulaUpdate
+from app.schemas.celula import CelulaBase, CelulaCreate, CelulaEstadoUpdate, CelulaRead, CelulaUpdate
 from app.schemas.criterio import (
     CriterioBase,
     CriterioCreate,

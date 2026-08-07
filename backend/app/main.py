@@ -4,7 +4,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.areas import router as areas_router
 from app.api.auth import router as auth_router
+from app.api.celulas import router as celulas_router
 from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
@@ -40,6 +42,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(usuarios_router)
 app.include_router(roles_router)
+app.include_router(areas_router)
+app.include_router(celulas_router)
 
 
 @app.get("/")
