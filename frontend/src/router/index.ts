@@ -49,6 +49,12 @@ const router = createRouter({
           component: () => import('@/views/capas/CapasView.vue'),
           meta: { roles: ['Administrador'] },
         },
+        {
+          path: 'auditorias',
+          name: 'auditorias',
+          component: () => import('@/views/auditorias/AuditoriasView.vue'),
+          meta: { roles: ['Administrador'] },
+        },
       ],
     },
   ],

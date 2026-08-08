@@ -6,11 +6,21 @@ from app.auth.security import hash_password
 from app.config import settings
 from app.db.database import SessionLocal
 from app.models.capa import Capa
+from app.models.frecuencia import Frecuencia
 from app.models.rol import Rol
 from app.models.usuario import Usuario
 
 _ROLES_INICIALES = ["Administrador", "Supervisor", "Auditor"]
 _CAPAS_INICIALES = ["Auditor", "Supervisor", "Gerente"]
+_FRECUENCIAS_INICIALES = [
+    ("Diaria", "Cada dia"),
+    ("Semanal", "Cada semana"),
+    ("Quincenal", "Cada quince dias"),
+    ("Mensual", "Cada mes"),
+    ("Bimestral", "Cada dos meses"),
+    ("Trimestral", "Cada tres meses"),
+    ("Anual", "Cada año"),
+]
 
 _ADMIN_CORREO = "admin@lpa.com"
 _ADMIN_NOMBRE = "Administrador"
@@ -62,12 +72,25 @@ def _seed_capas(session: Session) -> None:
     session.commit()
 
 
+def _seed_frecuencias(session: Session) -> None:
+    """Crea las frecuencias iniciales si no existen. Es idempotente."""
+    for nombre, descripcion in _FRECUENCIAS_INICIALES:
+        existente = session.exec(
+            select(Frecuencia).where(Frecuencia.nombre == nombre)
+        ).first()
+        if existente is None:
+            session.add(Frecuencia(nombre=nombre, descripcion=descripcion))
+
+    session.commit()
+
+
 def seed_inicial() -> None:
     """Ejecuta el seed de datos mínimos para que el sistema sea utilizable.
 
-    Es idempotente: no duplica roles, usuario administrador ni capas.
+    Es idempotente: no duplica roles, frecuencias, usuario administrador ni capas.
     """
     with SessionLocal() as session:
         rol_admin = _seed_roles(session)
         _seed_admin(session, rol_admin)
         _seed_capas(session)
+        _seed_frecuencias(session)

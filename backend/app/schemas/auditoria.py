@@ -1,4 +1,4 @@
-from pydantic import ConfigDict
+from pydantic import ConfigDict, computed_field
 from sqlmodel import Field, SQLModel
 
 
@@ -32,3 +32,10 @@ class AuditoriaRead(AuditoriaBase):
     capa_id: int
     frecuencia_id: int
     area_id: int | None = None
+    capa_nombre: str = ""
+    frecuencia_nombre: str = ""
+    area_nombre: str | None = None
+
+
+class AuditoriaEstadoUpdate(SQLModel):
+    activa: bool

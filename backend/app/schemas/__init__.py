@@ -2,6 +2,7 @@ from app.schemas.area import AreaBase, AreaCreate, AreaRead, AreaUpdate
 from app.schemas.auditoria import (
     AuditoriaBase,
     AuditoriaCreate,
+    AuditoriaEstadoUpdate,
     AuditoriaRead,
     AuditoriaUpdate,
 )
@@ -10,6 +11,7 @@ from app.schemas.celula import CelulaBase, CelulaCreate, CelulaEstadoUpdate, Cel
 from app.schemas.criterio import (
     CriterioBase,
     CriterioCreate,
+    CriterioEstadoUpdate,
     CriterioRead,
     CriterioUpdate,
 )

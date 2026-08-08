@@ -5,9 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.areas import router as areas_router
+from app.api.auditorias import router as auditorias_router
 from app.api.auth import router as auth_router
 from app.api.capas import router as capas_router
 from app.api.celulas import router as celulas_router
+from app.api.criterios import router as criterios_router
+from app.api.frecuencias import router as frecuencias_router
 from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
@@ -46,6 +49,9 @@ app.include_router(roles_router)
 app.include_router(areas_router)
 app.include_router(celulas_router)
 app.include_router(capas_router)
+app.include_router(frecuencias_router)
+app.include_router(auditorias_router)
+app.include_router(criterios_router)
 
 
 @app.get("/")
