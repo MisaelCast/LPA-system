@@ -36,6 +36,7 @@ function handleLogout() {
         <RouterLink to="/dashboard">Dashboard</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/usuarios">Usuarios</RouterLink>
         <RouterLink v-if="authStore.isAdmin" to="/areas">Áreas</RouterLink>
+        <RouterLink v-if="authStore.isAdmin" to="/capas">Capas</RouterLink>
       </nav>
     </aside>
 

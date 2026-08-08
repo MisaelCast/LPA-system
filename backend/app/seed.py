@@ -5,10 +5,12 @@ from sqlmodel import Session, select
 from app.auth.security import hash_password
 from app.config import settings
 from app.db.database import SessionLocal
+from app.models.capa import Capa
 from app.models.rol import Rol
 from app.models.usuario import Usuario
 
 _ROLES_INICIALES = ["Administrador", "Supervisor", "Auditor"]
+_CAPAS_INICIALES = ["Auditor", "Supervisor", "Gerente"]
 
 _ADMIN_CORREO = "admin@lpa.com"
 _ADMIN_NOMBRE = "Administrador"
@@ -49,11 +51,23 @@ def _seed_admin(session: Session, rol_admin: Rol) -> None:
     session.commit()
 
 
+def _seed_capas(session: Session) -> None:
+    """Crea las capas iniciales si no existen. Es idempotente."""
+    for nombre in _CAPAS_INICIALES:
+        existente = session.exec(select(Capa).where(Capa.nombre == nombre)).first()
+        if existente is None:
+            capa = Capa(nombre=nombre, descripcion=f"Capa de {nombre.lower()}", activa=True)
+            session.add(capa)
+
+    session.commit()
+
+
 def seed_inicial() -> None:
     """Ejecuta el seed de datos mínimos para que el sistema sea utilizable.
 
-    Es idempotente: no duplica roles ni el usuario administrador.
+    Es idempotente: no duplica roles, usuario administrador ni capas.
     """
     with SessionLocal() as session:
         rol_admin = _seed_roles(session)
         _seed_admin(session, rol_admin)
+        _seed_capas(session)
