@@ -15,6 +15,10 @@ from app.models.usuario import Usuario
 
 _ROLES_INICIALES = ["Administrador", "Supervisor", "Auditor"]
 _CAPAS_INICIALES = ["Auditor", "Supervisor", "Gerente"]
+_AREAS_INICIALES = [
+    ("Ensamble Final", "Área de ensamble final de producto."),
+    ("Pulido", "Área de pulido de producto."),
+]
 _FRECUENCIAS_INICIALES = [
     ("Diaria", "Cada dia"),
     ("Semanal", "Cada semana"),
@@ -99,6 +103,16 @@ def _seed_capas(session: Session) -> None:
     session.commit()
 
 
+def _seed_areas(session: Session) -> None:
+    """Crea las áreas iniciales si no existen. Es idempotente."""
+    for nombre, descripcion in _AREAS_INICIALES:
+        existente = session.exec(select(Area).where(Area.nombre == nombre)).first()
+        if existente is None:
+            session.add(Area(nombre=nombre, descripcion=descripcion, activa=True))
+
+    session.commit()
+
+
 def _seed_frecuencias(session: Session) -> None:
     """Crea las frecuencias iniciales si no existen. Es idempotente."""
     for nombre, descripcion in _FRECUENCIAS_INICIALES:
@@ -176,4 +190,5 @@ def seed_inicial() -> None:
         _seed_admin(session, rol_admin)
         _seed_capas(session)
         _seed_frecuencias(session)
+        _seed_areas(session)
         _seed_auditoria_ensamble_final(session)
