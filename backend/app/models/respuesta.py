@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -12,6 +13,7 @@ class Respuesta(SQLModel, table=True):
     """Resultado observado para un criterio durante una ejecucion."""
 
     __tablename__ = "respuesta"
+    __table_args__ = (UniqueConstraint("ejecucion_auditoria_id", "criterio_id"),)
 
     id: int | None = Field(default=None, primary_key=True)
     valor: str = Field(max_length=20)

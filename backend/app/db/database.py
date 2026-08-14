@@ -1,5 +1,6 @@
 from collections.abc import Generator
 
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -33,3 +34,42 @@ def create_db_and_tables() -> None:
         return
 
     SQLModel.metadata.create_all(engine)
+
+
+def ensure_schema_migrations() -> None:
+    """Aplica migraciones incrementales de forma idempotente."""
+    inspector = inspect(engine)
+
+    _add_column_if_missing(
+        inspector, "ejecucion_auditoria", "estado",
+        "ALTER TABLE ejecucion_auditoria ADD COLUMN estado VARCHAR(20) NOT NULL DEFAULT 'en_proceso'",
+    )
+
+    _add_unique_constraint_if_missing(
+        inspector, "respuesta", "uq_respuesta_ejecucion_criterio",
+        "ejecucion_auditoria_id, criterio_id",
+    )
+
+
+def _add_column_if_missing(
+    inspector, table: str, column: str, sql: str
+) -> None:
+    columns = {col["name"] for col in inspector.get_columns(table)}
+    if column not in columns:
+        with engine.connect() as conn:
+            conn.execute(text(sql))
+            conn.commit()
+
+
+def _add_unique_constraint_if_missing(
+    inspector, table: str, constraint_name: str, columns: str
+) -> None:
+    constraints = inspector.get_unique_constraints(table)
+    names = {c["name"] for c in constraints}
+    if constraint_name not in names:
+        with engine.connect() as conn:
+            conn.execute(text(
+                f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} "
+                f"UNIQUE ({columns})"
+            ))
+            conn.commit()

@@ -55,6 +55,11 @@ const router = createRouter({
           component: () => import('@/views/auditorias/AuditoriasView.vue'),
           meta: { roles: ['Administrador'] },
         },
+        {
+          path: 'ejecutar',
+          name: 'ejecutar',
+          component: () => import('@/views/ejecuciones/EjecucionAuditoriaView.vue'),
+        },
       ],
     },
   ],

@@ -18,6 +18,7 @@ class EjecucionAuditoria(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     fecha: datetime = Field(default_factory=datetime.utcnow)
     observaciones: str | None = Field(default=None, max_length=1000)
+    estado: str = Field(default="en_proceso", max_length=20)
     auditoria_id: int = Field(foreign_key="auditoria.id")
     usuario_id: int = Field(foreign_key="usuario.id")
     celula_id: int | None = Field(default=None, foreign_key="celula.id")

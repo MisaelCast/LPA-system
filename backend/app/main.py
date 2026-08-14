@@ -10,17 +10,19 @@ from app.api.auth import router as auth_router
 from app.api.capas import router as capas_router
 from app.api.celulas import router as celulas_router
 from app.api.criterios import router as criterios_router
+from app.api.ejecuciones_auditoria import router as ejecuciones_auditoria_router
 from app.api.frecuencias import router as frecuencias_router
 from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
-from app.db.database import create_db_and_tables
+from app.db.database import create_db_and_tables, ensure_schema_migrations
 from app.seed import seed_inicial
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_db_and_tables()
+    ensure_schema_migrations()
     seed_inicial()
     yield
 
@@ -52,6 +54,7 @@ app.include_router(capas_router)
 app.include_router(frecuencias_router)
 app.include_router(auditorias_router)
 app.include_router(criterios_router)
+app.include_router(ejecuciones_auditoria_router)
 
 
 @app.get("/")

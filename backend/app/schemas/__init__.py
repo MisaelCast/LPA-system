@@ -16,10 +16,14 @@ from app.schemas.criterio import (
     CriterioUpdate,
 )
 from app.schemas.ejecucion_auditoria import (
+    CriterioRespuesta,
     EjecucionAuditoriaBase,
     EjecucionAuditoriaCreate,
     EjecucionAuditoriaRead,
     EjecucionAuditoriaUpdate,
+    GuardarRespuestasRequest,
+    IniciarEjecucionRequest,
+    RespuestaItem,
 )
 from app.schemas.evidencia import EvidenciaBase, EvidenciaCreate, EvidenciaRead, EvidenciaUpdate
 from app.schemas.frecuencia import FrecuenciaBase, FrecuenciaCreate, FrecuenciaRead, FrecuenciaUpdate
