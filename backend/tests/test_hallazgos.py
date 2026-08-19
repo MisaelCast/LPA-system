@@ -444,3 +444,21 @@ class TestHallazgoService:
         assert resultado.auditoria_id == 1
         assert resultado.auditoria_nombre == "Ensamble Final"
         assert resultado.tipo == "R"
+
+class TestHallazgoEndpoint:
+    """Pruebas del endpoint HTTP de hallazgos (smoke test del schema)."""
+
+    def test_body_solo_descripcion_es_valido(self):
+        """El body del POST debe aceptar solo descripcion (respuesta_id viene del path)."""
+        from app.schemas.hallazgo import HallazgoBase
+
+        # Esto NO debe lanzar ValidationError
+        payload = HallazgoBase(descripcion="salto de paso")
+        assert payload.descripcion == "salto de paso"
+
+    def test_body_sin_descripcion_es_invalido(self):
+        from pydantic import ValidationError
+        from app.schemas.hallazgo import HallazgoBase
+
+        with pytest.raises(ValidationError):
+            HallazgoBase()  # type: ignore[call-arg]

@@ -95,13 +95,13 @@ async function iniciar(celula: Celula) {
 
 function sincronizarBorradorHallazgos() {
   if (!ejecucion.value) return
-  const siguiente: Record<number, string> = {}
+  const merged: Record<number, string> = { ...hallazgosInputs.value }
   for (const c of ejecucion.value.criterios) {
     if (c.hallazgo_descripcion) {
-      siguiente[c.id] = c.hallazgo_descripcion
+      merged[c.id] = c.hallazgo_descripcion
     }
   }
-  hallazgosInputs.value = siguiente
+  hallazgosInputs.value = merged
   hallazgosError.value = {}
   hallazgosGuardando.value = {}
 }
@@ -134,6 +134,19 @@ async function quitarHallazgo(criterio: CriterioRespuesta) {
   }
 }
 
+async function persistirRespuestasPendientes(): Promise<void> {
+  if (!ejecucion.value) return
+  const respuestas = criterios.value
+    .filter((c) => c.respuesta_valor !== null && c.respuesta_id === null)
+    .map((c) => ({
+      criterio_id: c.id,
+      valor: c.respuesta_valor!,
+      observaciones: c.respuesta_observaciones || null,
+    }))
+  if (respuestas.length === 0) return
+  ejecucion.value = await guardarRespuestas(ejecucion.value.id, { respuestas })
+}
+
 async function guardarHallazgo(criterio: CriterioRespuesta) {
   if (finalizada.value) {
     hallazgosError.value[criterio.id] =
@@ -145,28 +158,33 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     hallazgosError.value[criterio.id] = 'La descripción es obligatoria.'
     return
   }
-  if (!criterio.respuesta_id) {
-    hallazgosError.value[criterio.id] =
-      'Debes guardar la respuesta antes de registrar el hallazgo.'
-    return
-  }
   hallazgosGuardando.value[criterio.id] = true
-  hallazgosError.value[criterio.id] = ''
+  hallazgosError.value[criterio.id] = 'Guardando respuesta, espera un momento…'
   try {
-    if (criterio.hallazgo_id !== null) {
-      const actualizado = await actualizarHallazgo(criterio.hallazgo_id, {
-        descripcion,
-      })
-      criterio.hallazgo_id = actualizado.id
-      criterio.hallazgo_descripcion = actualizado.descripcion
-    } else {
-      const creado = await crearHallazgo(criterio.respuesta_id, {
-        descripcion,
-      })
-      criterio.hallazgo_id = creado.id
-      criterio.hallazgo_descripcion = creado.descripcion
-      hallazgosInputs.value[criterio.id] = creado.descripcion
+    if (!criterio.respuesta_id) {
+      await persistirRespuestasPendientes()
     }
+    const crit = criterios.value.find((c) => c.id === criterio.id)
+    if (!crit || !crit.respuesta_id) {
+      hallazgosError.value[criterio.id] =
+        'No se pudo guardar la respuesta. Intenta de nuevo.'
+      return
+    }
+    if (crit.hallazgo_id !== null) {
+      const actualizado = await actualizarHallazgo(crit.hallazgo_id, {
+        descripcion,
+      })
+      crit.hallazgo_id = actualizado.id
+      crit.hallazgo_descripcion = actualizado.descripcion
+    } else {
+      const creado = await crearHallazgo(crit.respuesta_id, {
+        descripcion,
+      })
+      crit.hallazgo_id = creado.id
+      crit.hallazgo_descripcion = creado.descripcion
+      hallazgosInputs.value[crit.id] = creado.descripcion
+    }
+    hallazgosError.value[crit.id] = ''
     exito.value = 'Hallazgo guardado correctamente.'
   } catch (err) {
     hallazgosError.value[criterio.id] =
@@ -181,14 +199,6 @@ async function guardar() {
   limpiarMensajes()
   cargando.value = true
   try {
-    for (const c of criterios.value) {
-      if (c.respuesta_valor === 'A' || c.respuesta_valor === 'R') {
-        const borrador = (hallazgosInputs.value[c.id] ?? '').trim()
-        if (borrador) {
-          await guardarHallazgo(c)
-        }
-      }
-    }
     const respuestas = criterios.value
       .filter((c) => c.respuesta_valor !== null)
       .map((c) => ({
@@ -198,6 +208,14 @@ async function guardar() {
       }))
     ejecucion.value = await guardarRespuestas(ejecucion.value!.id, { respuestas })
     sincronizarBorradorHallazgos()
+    for (const c of criterios.value) {
+      if (c.respuesta_valor === 'A' || c.respuesta_valor === 'R') {
+        const borrador = (hallazgosInputs.value[c.id] ?? '').trim()
+        if (borrador && c.hallazgo_id === null) {
+          await guardarHallazgo(c)
+        }
+      }
+    }
     exito.value = 'Respuestas guardadas correctamente.'
   } catch (err) {
     mostrarError('Error al guardar', err)
@@ -226,6 +244,12 @@ async function finalizar() {
 
 function mostrarCampoHallazgo(criterio: CriterioRespuesta): boolean {
   return criterio.respuesta_valor === 'A' || criterio.respuesta_valor === 'R'
+}
+
+function mostrarBadgeHallazgoPendiente(criterio: CriterioRespuesta): boolean {
+  return (
+    mostrarCampoHallazgo(criterio) && criterio.hallazgo_id === null
+  )
 }
 
 function claseChip(criterio: CriterioRespuesta, valor: string): string {
@@ -336,6 +360,12 @@ const valorLabel: Record<string, string> = { V: 'V', A: 'A', R: 'R' }
                 :disabled="finalizada"
                 @click="seleccionarValor(criterio, 'R')"
               >R</button>
+              <span
+                v-if="mostrarBadgeHallazgoPendiente(criterio)"
+                class="badge-pendiente"
+                :class="criterio.respuesta_valor === 'A' ? 'badge-amarillo' : 'badge-rojo'"
+                title="Aún no has guardado el hallazgo para esta respuesta."
+              >Hallazgo pendiente</span>
             </div>
             <div
               v-if="mostrarCampoHallazgo(criterio)"
@@ -475,7 +505,26 @@ h1 { margin-bottom: 1.5rem; }
 }
 .criterio-desc { flex: 1; }
 .criterio-desc span { display: block; margin-bottom: .5rem; }
-.criterio-valores { display: flex; gap: .25rem; }
+.criterio-valores { display: flex; gap: .25rem; align-items: center; flex-wrap: wrap; }
+
+.badge-pendiente {
+  font-size: .7rem;
+  font-weight: 600;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  margin-left: .35rem;
+  white-space: nowrap;
+}
+.badge-pendiente.badge-amarillo {
+  background: #fff4d6;
+  color: #8a5a00;
+  border: 1px solid #e0b85a;
+}
+.badge-pendiente.badge-rojo {
+  background: #ffe2e2;
+  color: #a02020;
+  border: 1px solid #d66;
+}
 .criterio-obs { width: 100%; margin-top: .5rem; }
 .criterio-obs .input { width: 100%; }
 

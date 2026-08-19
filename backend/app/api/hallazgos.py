@@ -6,7 +6,7 @@ from sqlmodel import Session
 from app.auth.dependencies import get_current_active_user
 from app.db.database import get_session
 from app.models.usuario import Usuario
-from app.schemas.hallazgo import HallazgoCreate, HallazgoDetallado, HallazgoUpdate
+from app.schemas.hallazgo import HallazgoBase, HallazgoCreate, HallazgoDetallado, HallazgoUpdate
 from app.services.hallazgo_service import HallazgoService
 
 router = APIRouter(tags=["hallazgos"])
@@ -37,11 +37,14 @@ def _a_http_error(error: ValueError) -> HTTPException:
 )
 def crear_hallazgo(
     respuesta_id: int,
-    datos: HallazgoCreate,
+    datos: HallazgoBase,
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
-    """Crea un hallazgo asociado a una respuesta con valor ``A`` o ``R``."""
+    """Crea un hallazgo asociado a una respuesta con valor ``A`` o ``R``.
+
+    El ``respuesta_id`` proviene del path; el body solo requiere ``descripcion``.
+    """
     payload = HallazgoCreate(
         descripcion=datos.descripcion,
         respuesta_id=respuesta_id,
