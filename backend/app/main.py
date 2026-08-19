@@ -12,6 +12,7 @@ from app.api.celulas import router as celulas_router
 from app.api.criterios import router as criterios_router
 from app.api.ejecuciones_auditoria import router as ejecuciones_auditoria_router
 from app.api.frecuencias import router as frecuencias_router
+from app.api.hallazgos import router as hallazgos_router
 from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
@@ -55,6 +56,7 @@ app.include_router(frecuencias_router)
 app.include_router(auditorias_router)
 app.include_router(criterios_router)
 app.include_router(ejecuciones_auditoria_router)
+app.include_router(hallazgos_router)
 
 
 @app.get("/")

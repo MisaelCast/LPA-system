@@ -14,7 +14,9 @@ from app.schemas.ejecucion_auditoria import (
     GuardarRespuestasRequest,
     IniciarEjecucionRequest,
 )
+from app.schemas.hallazgo import HallazgoDetallado
 from app.services.ejecucion_auditoria_service import EjecucionAuditoriaService
+from app.services.hallazgo_service import HallazgoService
 
 router = APIRouter(
     prefix="/ejecuciones-auditoria",
@@ -158,6 +160,32 @@ def finalizar_ejecucion(
         if "ya esta finalizada" in str(error).lower():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        )
+
+
+@router.get(
+    "/ejecuciones-auditoria/{ejecucion_id}/hallazgos",
+    response_model=list[HallazgoDetallado],
+)
+def listar_hallazgos_de_ejecucion(
+    ejecucion_id: int,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Devuelve los hallazgos de una ejecucion ordenados por criterio.orden."""
+    service = HallazgoService(session)
+    try:
+        return service.listar_por_ejecucion(ejecucion_id, usuario)
+    except ValueError as error:
+        mensaje = str(error).lower()
+        if "no encontrad" in mensaje or "no encontrada" in mensaje:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(error),
             )
         raise HTTPException(

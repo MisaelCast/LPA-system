@@ -5,6 +5,8 @@ export interface CriterioRespuesta {
   respuesta_valor: string | null
   respuesta_observaciones: string | null
   respuesta_id: number | null
+  hallazgo_id: number | null
+  hallazgo_descripcion: string | null
 }
 
 export interface EjecucionAuditoria {

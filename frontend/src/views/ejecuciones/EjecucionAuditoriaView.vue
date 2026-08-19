@@ -13,6 +13,11 @@ import {
   guardarRespuestas,
   finalizarEjecucion,
 } from '@/services/ejecucion.service'
+import {
+  crearHallazgo,
+  actualizarHallazgo,
+  eliminarHallazgo,
+} from '@/services/hallazgo.service'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -27,11 +32,16 @@ const auditoriaSeleccionada = ref<Auditoria | null>(null)
 const celulas = ref<Celula[]>([])
 const ejecucion = ref<EjecucionAuditoria | null>(null)
 
+const hallazgosInputs = ref<Record<number, string>>({})
+const hallazgosGuardando = ref<Record<number, boolean>>({})
+const hallazgosError = ref<Record<number, string>>({})
+
 const criterios = computed(() => ejecucion.value?.criterios || [])
 const respondidos = computed(() =>
   criterios.value.filter((c) => c.respuesta_valor !== null).length,
 )
 const total = computed(() => criterios.value.length)
+const finalizada = computed(() => ejecucion.value?.estado === 'finalizada')
 
 async function mostrarError(prefix: string, err: unknown) {
   const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(err)
@@ -74,6 +84,7 @@ async function iniciar(celula: Celula) {
       celula_id: celula.id,
     })
     ejecucion.value = ej
+    sincronizarBorradorHallazgos()
     paso.value = 'ejecutando'
   } catch (err) {
     mostrarError('Error al iniciar ejecución', err)
@@ -82,10 +93,87 @@ async function iniciar(celula: Celula) {
   }
 }
 
-function seleccionarValor(criterio: CriterioRespuesta, valor: string) {
+function sincronizarBorradorHallazgos() {
+  if (!ejecucion.value) return
+  const siguiente: Record<number, string> = {}
+  for (const c of ejecucion.value.criterios) {
+    if (c.hallazgo_descripcion) {
+      siguiente[c.id] = c.hallazgo_descripcion
+    }
+  }
+  hallazgosInputs.value = siguiente
+  hallazgosError.value = {}
+  hallazgosGuardando.value = {}
+}
+
+async function seleccionarValor(criterio: CriterioRespuesta, valor: string) {
   criterio.respuesta_valor = criterio.respuesta_valor === valor ? null : valor
-  if (valor === 'V') {
+  if (valor === 'V' && criterio.respuesta_valor === 'V') {
     criterio.respuesta_observaciones = null
+    if (criterio.hallazgo_id !== null && !finalizada.value) {
+      await quitarHallazgo(criterio)
+    }
+    return
+  }
+
+  if (criterio.respuesta_valor === null && criterio.hallazgo_id !== null) {
+    await quitarHallazgo(criterio)
+  }
+}
+
+async function quitarHallazgo(criterio: CriterioRespuesta) {
+  if (criterio.hallazgo_id === null) return
+  try {
+    await eliminarHallazgo(criterio.hallazgo_id)
+    criterio.hallazgo_id = null
+    criterio.hallazgo_descripcion = null
+    delete hallazgosInputs.value[criterio.id]
+    delete hallazgosError.value[criterio.id]
+  } catch (err) {
+    mostrarError('No se pudo eliminar el hallazgo', err)
+  }
+}
+
+async function guardarHallazgo(criterio: CriterioRespuesta) {
+  if (finalizada.value) {
+    hallazgosError.value[criterio.id] =
+      'La ejecución está finalizada, no se pueden modificar hallazgos.'
+    return
+  }
+  const descripcion = (hallazgosInputs.value[criterio.id] ?? '').trim()
+  if (!descripcion) {
+    hallazgosError.value[criterio.id] = 'La descripción es obligatoria.'
+    return
+  }
+  if (!criterio.respuesta_id) {
+    hallazgosError.value[criterio.id] =
+      'Debes guardar la respuesta antes de registrar el hallazgo.'
+    return
+  }
+  hallazgosGuardando.value[criterio.id] = true
+  hallazgosError.value[criterio.id] = ''
+  try {
+    if (criterio.hallazgo_id !== null) {
+      const actualizado = await actualizarHallazgo(criterio.hallazgo_id, {
+        descripcion,
+      })
+      criterio.hallazgo_id = actualizado.id
+      criterio.hallazgo_descripcion = actualizado.descripcion
+    } else {
+      const creado = await crearHallazgo(criterio.respuesta_id, {
+        descripcion,
+      })
+      criterio.hallazgo_id = creado.id
+      criterio.hallazgo_descripcion = creado.descripcion
+      hallazgosInputs.value[criterio.id] = creado.descripcion
+    }
+    exito.value = 'Hallazgo guardado correctamente.'
+  } catch (err) {
+    hallazgosError.value[criterio.id] =
+      (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+      String(err)
+  } finally {
+    hallazgosGuardando.value[criterio.id] = false
   }
 }
 
@@ -93,6 +181,14 @@ async function guardar() {
   limpiarMensajes()
   cargando.value = true
   try {
+    for (const c of criterios.value) {
+      if (c.respuesta_valor === 'A' || c.respuesta_valor === 'R') {
+        const borrador = (hallazgosInputs.value[c.id] ?? '').trim()
+        if (borrador) {
+          await guardarHallazgo(c)
+        }
+      }
+    }
     const respuestas = criterios.value
       .filter((c) => c.respuesta_valor !== null)
       .map((c) => ({
@@ -101,6 +197,7 @@ async function guardar() {
         observaciones: c.respuesta_observaciones || null,
       }))
     ejecucion.value = await guardarRespuestas(ejecucion.value!.id, { respuestas })
+    sincronizarBorradorHallazgos()
     exito.value = 'Respuestas guardadas correctamente.'
   } catch (err) {
     mostrarError('Error al guardar', err)
@@ -127,8 +224,18 @@ async function finalizar() {
   }
 }
 
+function mostrarCampoHallazgo(criterio: CriterioRespuesta): boolean {
+  return criterio.respuesta_valor === 'A' || criterio.respuesta_valor === 'R'
+}
+
+function claseChip(criterio: CriterioRespuesta, valor: string): string {
+  if (criterio.respuesta_valor !== valor) return ''
+  if (valor === 'V') return 'verde'
+  if (valor === 'A') return 'amarillo'
+  return 'rojo'
+}
+
 const valorLabel: Record<string, string> = { V: 'V', A: 'A', R: 'R' }
-const valorColor: Record<string, string> = { V: 'verde', A: 'amarillo', R: 'rojo' }
 </script>
 
 <template>
@@ -188,6 +295,7 @@ const valorColor: Record<string, string> = { V: 'verde', A: 'amarillo', R: 'rojo
           <span v-if="ejecucion.celula_numero">Célula {{ ejecucion.celula_numero }}</span>
           <span v-if="ejecucion.area_nombre">· {{ ejecucion.area_nombre }}</span>
           <span>· {{ ejecucion.auditor_nombre }}</span>
+          <span v-if="finalizada" class="estado-final">· FINALIZADA</span>
         </div>
         <div class="progreso">
           <div class="progreso-barra">
@@ -213,22 +321,73 @@ const valorColor: Record<string, string> = { V: 'verde', A: 'amarillo', R: 'rojo
               <button
                 class="chip-btn verde"
                 :class="{ activo: criterio.respuesta_valor === 'V' }"
+                :disabled="finalizada"
                 @click="seleccionarValor(criterio, 'V')"
               >V</button>
               <button
                 class="chip-btn amarillo"
                 :class="{ activo: criterio.respuesta_valor === 'A' }"
+                :disabled="finalizada"
                 @click="seleccionarValor(criterio, 'A')"
               >A</button>
               <button
                 class="chip-btn rojo"
                 :class="{ activo: criterio.respuesta_valor === 'R' }"
+                :disabled="finalizada"
                 @click="seleccionarValor(criterio, 'R')"
               >R</button>
             </div>
+            <div
+              v-if="mostrarCampoHallazgo(criterio)"
+              class="criterio-hallazgo"
+              :class="claseChip(criterio, criterio.respuesta_valor!)"
+            >
+              <label>
+                <strong>
+                  {{
+                    criterio.respuesta_valor === 'A'
+                      ? 'Hallazgo menor (corregido y retroalimentado)'
+                      : 'Hallazgo mayor / grave'
+                  }}
+                </strong>
+              </label>
+              <textarea
+                v-model="hallazgosInputs[criterio.id]"
+                class="input hallazgo-input"
+                rows="3"
+                placeholder="Describe el hallazgo detectado..."
+                :disabled="finalizada"
+              ></textarea>
+              <div class="hallazgo-acciones">
+                <button
+                  class="btn small"
+                  :disabled="finalizada || hallazgosGuardando[criterio.id]"
+                  @click="guardarHallazgo(criterio)"
+                >
+                  {{
+                    criterio.hallazgo_id
+                      ? 'Actualizar hallazgo'
+                      : 'Registrar hallazgo'
+                  }}
+                </button>
+                <button
+                  v-if="criterio.hallazgo_id && !finalizada"
+                  class="btn small danger"
+                  @click="quitarHallazgo(criterio)"
+                >
+                  Quitar hallazgo
+                </button>
+              </div>
+              <div v-if="hallazgosError[criterio.id]" class="msg error small">
+                {{ hallazgosError[criterio.id] }}
+              </div>
+              <div v-else-if="criterio.hallazgo_id" class="msg success small">
+                Hallazgo #{{ criterio.hallazgo_id }} registrado.
+              </div>
+            </div>
           </div>
           <div
-            v-if="criterio.respuesta_valor && criterio.respuesta_valor !== 'V'"
+            v-if="criterio.respuesta_valor && criterio.respuesta_valor !== 'V' && !mostrarCampoHallazgo(criterio)"
             class="criterio-obs"
           >
             <input
@@ -236,6 +395,7 @@ const valorColor: Record<string, string> = { V: 'verde', A: 'amarillo', R: 'rojo
               class="input"
               placeholder="Observaciones..."
               type="text"
+              :disabled="finalizada"
             />
           </div>
         </div>
@@ -244,12 +404,12 @@ const valorColor: Record<string, string> = { V: 'verde', A: 'amarillo', R: 'rojo
       <div class="acciones">
         <button
           class="btn"
-          :disabled="cargando"
+          :disabled="cargando || finalizada"
           @click="guardar"
         >Guardar</button>
         <button
           class="btn primary"
-          :disabled="cargando || respondidos < total"
+          :disabled="cargando || respondidos < total || finalizada"
           @click="finalizar"
         >Finalizar Auditoría</button>
       </div>
@@ -278,6 +438,7 @@ h1 { margin-bottom: 1.5rem; }
 .msg { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; background: #f0f0f0; }
 .msg.error { background: #fee; color: #c00; border: 1px solid #fcc; }
 .msg.success { background: #efe; color: #060; border: 1px solid #cfc; }
+.msg.small { padding: .4rem .65rem; font-size: .8rem; margin-top: .5rem; }
 
 .seleccion h2 { margin-bottom: .25rem; }
 .seleccion h3 { margin: 1.5rem 0 .75rem; }
@@ -297,6 +458,7 @@ h1 { margin-bottom: 1.5rem; }
 }
 .ejecucion-header h2 { margin: 0 0 .25rem; }
 .ejecucion-meta { color: #666; font-size: .875rem; margin-bottom: .75rem; }
+.estado-final { color: #c00; font-weight: 700; }
 .progreso { display: flex; align-items: center; gap: .75rem; font-size: .875rem; color: #444; }
 .progreso-barra { flex: 1; height: 8px; background: #e0e0e8; border-radius: 4px; overflow: hidden; }
 .progreso-relleno { height: 100%; background: #4c6; border-radius: 4px; transition: width .3s; }
@@ -317,6 +479,20 @@ h1 { margin-bottom: 1.5rem; }
 .criterio-obs { width: 100%; margin-top: .5rem; }
 .criterio-obs .input { width: 100%; }
 
+.criterio-hallazgo {
+  margin-top: .75rem;
+  padding: .75rem;
+  border-radius: 8px;
+  border: 1px solid;
+  background: #fff;
+}
+.criterio-hallazgo.verde { border-color: #2a2; }
+.criterio-hallazgo.amarillo { border-color: #b80; background: #fffaf0; }
+.criterio-hallazgo.rojo { border-color: #c22; background: #fff5f5; }
+.criterio-hallazgo label { display: block; margin-bottom: .35rem; font-size: .85rem; }
+.hallazgo-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; }
+.hallazgo-acciones { display: flex; gap: .5rem; margin-top: .5rem; }
+
 .input {
   padding: .5rem .75rem; border: 1px solid #ccc; border-radius: 6px; font-size: .875rem;
   outline: none; box-sizing: border-box;
@@ -330,6 +506,7 @@ h1 { margin-bottom: 1.5rem; }
 }
 .chip-btn:hover { opacity: .85; }
 .chip-btn.activo { transform: scale(1.1); }
+.chip-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 .chip-btn.verde { color: #2a2; border-color: #2a2; }
 .chip-btn.verde.activo { background: #2a2; color: #fff; }
@@ -345,6 +522,8 @@ h1 { margin-bottom: 1.5rem; }
   padding: .5rem 1.25rem; border: 1px solid #ccc; border-radius: 6px;
   background: #fff; cursor: pointer; font-size: .875rem;
 }
+.btn.small { padding: .35rem .8rem; font-size: .8rem; }
+.btn.danger { color: #c22; border-color: #c22; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn.primary { background: #36c; color: #fff; border-color: #36c; }
 .btn.primary:disabled { background: #88a; border-color: #88a; }

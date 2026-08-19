@@ -8,6 +8,7 @@ from app.models.auditoria import Auditoria
 from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
+from app.models.hallazgo import Hallazgo
 from app.models.respuesta import Respuesta
 from app.models.usuario import Usuario
 from app.repositories.ejecucion_auditoria_repository import (
@@ -53,6 +54,21 @@ class EjecucionAuditoriaService:
 
         respuestas = self._respuesta_repo.listar_por_ejecucion(ejecucion.id)
 
+        respuestas_por_id = {r.id: r for r in respuestas}
+
+        hallazgos = list(
+            self._session.exec(
+                select(Hallazgo).where(
+                    Hallazgo.respuesta_id.in_(
+                        list(respuestas_por_id.keys())
+                    )
+                    if respuestas_por_id
+                    else Hallazgo.id == -1
+                )
+            ).all()
+        )
+        hallazgo_por_respuesta = {h.respuesta_id: h for h in hallazgos}
+
         criterios = (
             self._session.exec(
                 select(Criterio)
@@ -68,6 +84,11 @@ class EjecucionAuditoriaService:
                 (r for r in respuestas if r.criterio_id == criterio.id),
                 None,
             )
+            hallazgo = (
+                hallazgo_por_respuesta.get(respuesta.id)
+                if respuesta is not None
+                else None
+            )
             criterios_enriquecidos.append({
                 "id": criterio.id,
                 "descripcion": criterio.descripcion,
@@ -77,6 +98,10 @@ class EjecucionAuditoriaService:
                     respuesta.observaciones if respuesta else None
                 ),
                 "respuesta_id": respuesta.id if respuesta else None,
+                "hallazgo_id": hallazgo.id if hallazgo else None,
+                "hallazgo_descripcion": (
+                    hallazgo.descripcion if hallazgo else None
+                ),
             })
 
         object.__setattr__(ejecucion, "criterios", criterios_enriquecidos)

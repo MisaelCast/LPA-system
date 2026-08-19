@@ -36,6 +36,8 @@ class CriterioRespuesta(SQLModel):
     respuesta_valor: str | None = None
     respuesta_observaciones: str | None = None
     respuesta_id: int | None = None
+    hallazgo_id: int | None = None
+    hallazgo_descripcion: str | None = None
 
 
 class EjecucionAuditoriaRead(EjecucionAuditoriaBase):
