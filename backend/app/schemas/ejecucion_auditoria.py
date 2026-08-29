@@ -52,6 +52,39 @@ class EjecucionAuditoriaRead(EjecucionAuditoriaBase):
     criterios: list[CriterioRespuesta] = []
 
 
+class EjecucionResumen(SQLModel):
+    """Resumen de resultados V/A/R de una ejecucion."""
+
+    total_criterios: int = 0
+    total_v: int = 0
+    total_a: int = 0
+    total_r: int = 0
+
+
+class EjecucionAuditoriaListItem(SQLModel):
+    """Fila compacta del historial de ejecuciones."""
+
+    id: int
+    fecha: datetime
+    estado: str
+    auditoria_id: int
+    auditoria_nombre: str = ""
+    usuario_id: int
+    usuario_nombre: str = ""
+    celula_id: int | None = None
+    celula_numero: int | None = None
+    area_id: int | None = None
+    area_nombre: str | None = None
+    resumen: EjecucionResumen = EjecucionResumen()
+
+
+class EjecucionAuditoriaDetalle(EjecucionAuditoriaRead):
+    """Detalle completo de una ejecucion incluyendo resumen."""
+
+    area_id: int | None = None
+    resumen: EjecucionResumen = EjecucionResumen()
+
+
 class IniciarEjecucionRequest(SQLModel):
     celula_id: int | None = None
 

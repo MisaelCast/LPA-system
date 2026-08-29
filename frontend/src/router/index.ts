@@ -60,6 +60,11 @@ const router = createRouter({
           name: 'ejecutar',
           component: () => import('@/views/ejecuciones/EjecucionAuditoriaView.vue'),
         },
+        {
+          path: 'auditorias-realizadas',
+          name: 'auditorias-realizadas',
+          component: () => import('@/views/ejecuciones/AuditoriasRealizadasView.vue'),
+        },
       ],
     },
   ],

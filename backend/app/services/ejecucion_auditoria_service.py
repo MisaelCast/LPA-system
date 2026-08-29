@@ -2,8 +2,9 @@
 
 from datetime import datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
+from app.models.area import Area
 from app.models.auditoria import Auditoria
 from app.models.celula import Celula
 from app.models.criterio import Criterio
@@ -197,6 +198,156 @@ class EjecucionAuditoriaService:
         if ejecucion is None:
             raise ValueError("Ejecucion de auditoria no encontrada.")
         return self._enriquecer_read(ejecucion)
+
+    def _es_admin(self, usuario: Usuario) -> bool:
+        rol = getattr(usuario, "rol", None)
+        return getattr(rol, "nombre", "") == "Administrador"
+
+    def _resumen_de_respuestas(
+        self, respuestas: list[Respuesta], total_criterios: int
+    ) -> dict:
+        total_v = sum(1 for r in respuestas if r.valor == "V")
+        total_a = sum(1 for r in respuestas if r.valor == "A")
+        total_r = sum(1 for r in respuestas if r.valor == "R")
+        return {
+            "total_criterios": total_criterios,
+            "total_v": total_v,
+            "total_a": total_a,
+            "total_r": total_r,
+        }
+
+    def _contar_criterios_activos(self, auditoria_id: int) -> int:
+        return self._session.exec(
+            select(func.count()).select_from(Criterio).where(
+                Criterio.auditoria_id == auditoria_id,
+                Criterio.activo == True,  # noqa: E712
+            )
+        ).one()
+
+    def _a_list_item(
+        self, ejecucion: EjecucionAuditoria, respuestas: list[Respuesta]
+    ) -> dict:
+        auditoria_nombre = ""
+        area_id: int | None = None
+        area_nombre: str | None = None
+
+        auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
+        if auditoria:
+            auditoria_nombre = auditoria.nombre
+            if auditoria.area_id:
+                area_id = auditoria.area_id
+                area = self._session.get(Area, auditoria.area_id)
+                if area:
+                    area_nombre = area.nombre
+
+        celula_numero: int | None = None
+        if ejecucion.celula_id:
+            celula = self._session.get(Celula, ejecucion.celula_id)
+            if celula:
+                celula_numero = celula.numero
+
+        usuario_nombre = ""
+        usuario = self._session.get(Usuario, ejecucion.usuario_id)
+        if usuario:
+            usuario_nombre = usuario.nombre
+
+        total_criterios = self._contar_criterios_activos(ejecucion.auditoria_id)
+
+        return {
+            "id": ejecucion.id,
+            "fecha": ejecucion.fecha,
+            "estado": ejecucion.estado,
+            "auditoria_id": ejecucion.auditoria_id,
+            "auditoria_nombre": auditoria_nombre,
+            "usuario_id": ejecucion.usuario_id,
+            "usuario_nombre": usuario_nombre,
+            "celula_id": ejecucion.celula_id,
+            "celula_numero": celula_numero,
+            "area_id": area_id,
+            "area_nombre": area_nombre,
+            "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
+        }
+
+    def listar_ejecuciones(
+        self,
+        usuario: Usuario,
+        skip: int = 0,
+        limit: int = 100,
+        auditoria_id: int | None = None,
+        celula_id: int | None = None,
+        usuario_id: int | None = None,
+        estado: str | None = None,
+        fecha_desde: datetime | None = None,
+        fecha_hasta: datetime | None = None,
+    ) -> list[dict]:
+        """Lista las ejecuciones del historial con sus resumenes V/A/R.
+
+        Un auditor solo ve sus propias ejecuciones; un administrador ve todas.
+        """
+        if not self._es_admin(usuario):
+            usuario_id = usuario.id
+
+        ejecuciones = self._repo.listar_con_filtros(
+            skip=skip,
+            limit=limit,
+            auditoria_id=auditoria_id,
+            celula_id=celula_id,
+            usuario_id=usuario_id,
+            estado=estado,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta,
+        )
+
+        respuestas_por_ejecucion: dict[int, list[Respuesta]] = {}
+        if ejecuciones:
+            ids = [e.id for e in ejecuciones]
+            respuestas = list(
+                self._session.exec(
+                    select(Respuesta).where(
+                        Respuesta.ejecucion_auditoria_id.in_(ids)
+                    )
+                ).all()
+            )
+            for r in respuestas:
+                respuestas_por_ejecucion.setdefault(
+                    r.ejecucion_auditoria_id, []
+                ).append(r)
+
+        return [
+            self._a_list_item(
+                e, respuestas_por_ejecucion.get(e.id, [])
+            )
+            for e in ejecuciones
+        ]
+
+    def obtener_detalle(self, ejecucion_id: int) -> dict:
+        """Devuelve el detalle completo de una ejecucion con resumen V/A/R."""
+        ejecucion = self.obtener_por_id(ejecucion_id)
+
+        respuestas = self._respuesta_repo.listar_por_ejecucion(ejecucion_id)
+        total_criterios = self._contar_criterios_activos(ejecucion.auditoria_id)
+
+        area_id: int | None = None
+        auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
+        if auditoria and auditoria.area_id:
+            area_id = auditoria.area_id
+
+        return {
+            "id": ejecucion.id,
+            "fecha": ejecucion.fecha,
+            "observaciones": getattr(ejecucion, "observaciones", None),
+            "estado": ejecucion.estado,
+            "auditoria_id": ejecucion.auditoria_id,
+            "usuario_id": ejecucion.usuario_id,
+            "celula_id": ejecucion.celula_id,
+            "auditoria_nombre": getattr(ejecucion, "auditoria_nombre", ""),
+            "area_nombre": getattr(ejecucion, "area_nombre", None),
+            "celula_numero": getattr(ejecucion, "celula_numero", None),
+            "auditor_nombre": getattr(ejecucion, "auditor_nombre", ""),
+            "area_id": area_id,
+            "criterios": getattr(ejecucion, "criterios", []),
+            "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
+        }
 
     def guardar_respuestas(
         self,

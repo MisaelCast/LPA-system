@@ -1,6 +1,8 @@
 """Endpoints para la ejecucion de auditorias."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from app.auth.dependencies import get_current_active_user
@@ -10,6 +12,8 @@ from app.models.usuario import Usuario
 from app.schemas.auditoria import AuditoriaRead
 from app.schemas.celula import CelulaRead
 from app.schemas.ejecucion_auditoria import (
+    EjecucionAuditoriaDetalle,
+    EjecucionAuditoriaListItem,
     EjecucionAuditoriaRead,
     GuardarRespuestasRequest,
     IniciarEjecucionRequest,
@@ -22,6 +26,34 @@ router = APIRouter(
     prefix="/ejecuciones-auditoria",
     tags=["ejecuciones-auditoria"],
 )
+
+
+@router.get("", response_model=list[EjecucionAuditoriaListItem])
+def listar_ejecuciones(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=1000),
+    auditoria_id: int | None = Query(default=None),
+    celula_id: int | None = Query(default=None),
+    usuario_id: int | None = Query(default=None),
+    estado: str | None = Query(default=None),
+    fecha_desde: datetime | None = Query(default=None),
+    fecha_hasta: datetime | None = Query(default=None),
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Lista el historial de ejecuciones de auditoria, mas recientes primero."""
+    service = EjecucionAuditoriaService(session)
+    return service.listar_ejecuciones(
+        usuario,
+        skip=skip,
+        limit=limit,
+        auditoria_id=auditoria_id,
+        celula_id=celula_id,
+        usuario_id=usuario_id,
+        estado=estado,
+        fecha_desde=fecha_desde,
+        fecha_hasta=fecha_hasta,
+    )
 
 
 @router.get("/disponibles", response_model=list[AuditoriaRead])
@@ -96,6 +128,26 @@ def obtener_ejecucion(
     service = EjecucionAuditoriaService(session)
     try:
         return service.obtener_por_id(ejecucion_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        )
+
+
+@router.get(
+    "/{ejecucion_id}",
+    response_model=EjecucionAuditoriaDetalle,
+)
+def obtener_ejecucion_detalle(
+    ejecucion_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(get_current_active_user),
+):
+    """Consulta el detalle completo de una ejecucion con resumen V/A/R."""
+    service = EjecucionAuditoriaService(session)
+    try:
+        return service.obtener_detalle(ejecucion_id)
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

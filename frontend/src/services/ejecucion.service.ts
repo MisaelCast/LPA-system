@@ -3,6 +3,9 @@ import type { Auditoria } from '@/types/auditoria'
 import type { Celula } from '@/types/area'
 import type {
   EjecucionAuditoria,
+  EjecucionAuditoriaDetalle,
+  EjecucionAuditoriaListItem,
+  EjecucionesFiltros,
   GuardarRespuestasRequest,
   IniciarEjecucionRequest,
 } from '@/types/ejecucion'
@@ -56,5 +59,21 @@ export function finalizarEjecucion(ejecucionId: number): Promise<EjecucionAudito
     .post<EjecucionAuditoria>(
       `/ejecuciones-auditoria/ejecuciones-auditoria/${ejecucionId}/finalizar`,
     )
+    .then((res) => res.data)
+}
+
+export function listarEjecuciones(
+  filtros: EjecucionesFiltros = {},
+): Promise<EjecucionAuditoriaListItem[]> {
+  return api
+    .get<EjecucionAuditoriaListItem[]>('/ejecuciones-auditoria', { params: filtros })
+    .then((res) => res.data)
+}
+
+export function obtenerEjecucionDetalle(
+  ejecucionId: number,
+): Promise<EjecucionAuditoriaDetalle> {
+  return api
+    .get<EjecucionAuditoriaDetalle>(`/ejecuciones-auditoria/${ejecucionId}`)
     .then((res) => res.data)
 }

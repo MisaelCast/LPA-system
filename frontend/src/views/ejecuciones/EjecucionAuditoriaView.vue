@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useRoute, useRouter } from 'vue-router'
 import type { Auditoria } from '@/types/auditoria'
 import type { Celula } from '@/types/area'
 import type { EjecucionAuditoria, CriterioRespuesta } from '@/types/ejecucion'
@@ -20,7 +19,7 @@ import {
 } from '@/services/hallazgo.service'
 
 const router = useRouter()
-const authStore = useAuthStore()
+const route = useRoute()
 
 const paso = ref<'seleccionar' | 'celulas' | 'ejecutando' | 'terminado'>('seleccionar')
 const error = ref('')
@@ -54,12 +53,35 @@ function limpiarMensajes() {
 }
 
 onMounted(async () => {
+  const idParam = route.query.id
+  if (idParam) {
+    const id = Number(idParam)
+    if (Number.isInteger(id)) {
+      await cargarEjecucionExistente(id)
+      return
+    }
+  }
   try {
     auditorias.value = await obtenerAuditoriasDisponibles()
   } catch (err) {
     mostrarError('Error al cargar auditorías', err)
   }
 })
+
+async function cargarEjecucionExistente(id: number) {
+  limpiarMensajes()
+  cargando.value = true
+  try {
+    ejecucion.value = await obtenerEjecucion(id)
+    sincronizarBorradorHallazgos()
+    paso.value = 'ejecutando'
+  } catch (err) {
+    mostrarError('Error al cargar la ejecución', err)
+    paso.value = 'seleccionar'
+  } finally {
+    cargando.value = false
+  }
+}
 
 function seleccionarAuditoria(auditoria: Auditoria) {
   limpiarMensajes()
@@ -258,8 +280,6 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   if (valor === 'A') return 'amarillo'
   return 'rojo'
 }
-
-const valorLabel: Record<string, string> = { V: 'V', A: 'A', R: 'R' }
 </script>
 
 <template>
