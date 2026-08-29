@@ -6,10 +6,12 @@ import {
   crearArea,
   actualizarArea,
   cambiarEstadoArea,
+  eliminarArea,
   obtenerCelulas,
   crearCelula,
   actualizarCelula,
   cambiarEstadoCelula,
+  eliminarCelula,
 } from '@/services/area.service'
 
 export const useAreasStore = defineStore('areas', () => {
@@ -91,6 +93,19 @@ export const useAreasStore = defineStore('areas', () => {
     await cargarCelulas(areaId)
   }
 
+  async function eliminar(id: number): Promise<void> {
+    await eliminarArea(id)
+    await cargarAreas()
+  }
+
+  async function eliminarCelulaEnArea(
+    celulaId: number,
+    areaId: number,
+  ): Promise<void> {
+    await eliminarCelula(celulaId)
+    await cargarCelulas(areaId)
+  }
+
   return {
     areas,
     cargando,
@@ -105,5 +120,7 @@ export const useAreasStore = defineStore('areas', () => {
     crearCelulaEnArea,
     actualizarCelulaEnArea,
     cambiarEstadoCelulaEnArea,
+    eliminar,
+    eliminarCelulaEnArea,
   }
 })

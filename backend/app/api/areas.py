@@ -73,6 +73,31 @@ def cambiar_estado_area(
         )
 
 
+@router.delete("/areas/{area_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_area(
+    area_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> None:
+    """Elimina fisicamente un area del sistema.
+
+    Solo accesible por usuarios con rol **Administrador**.
+    """
+    service = AreaService(session)
+    try:
+        service.eliminar(area_id)
+    except ValueError as error:
+        if "no encontrada" in str(error).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
+
+
 @router.put("/areas/{area_id}", response_model=AreaRead)
 def actualizar_area(
     area_id: int,

@@ -54,3 +54,8 @@ class CelulaRepository:
         self._session.commit()
         self._session.refresh(celula)
         return celula
+
+    def eliminar(self, celula: Celula) -> None:
+        """Elimina fisicamente una celula de la base de datos."""
+        self._session.delete(celula)
+        self._session.commit()

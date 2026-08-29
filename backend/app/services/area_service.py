@@ -1,6 +1,6 @@
 """Logica de negocio para la entidad Area."""
 
-from sqlmodel import Session
+from sqlmodel import Session, func, select
 
 from app.models.area import Area
 from app.repositories.area_repository import AreaRepository
@@ -12,6 +12,7 @@ class AreaService:
 
     def __init__(self, session: Session) -> None:
         self._repo = AreaRepository(session)
+        self._session = session
 
     def listar(self, skip: int = 0, limit: int = 100) -> list[Area]:
         """Obtiene un listado paginado de areas."""
@@ -80,3 +81,48 @@ class AreaService:
 
         area.activa = activa
         return self._repo.actualizar(area)
+
+    def eliminar(self, area_id: int) -> None:
+        """Elimina fisicamente un area si no tiene dependencias.
+
+        Raises:
+            ValueError: Si el area no existe o tiene celulas, auditorias o
+                usuarios asociados.
+        """
+        from app.models.auditoria import Auditoria
+        from app.models.celula import Celula
+        from app.models.usuario_area import UsuarioArea
+
+        area = self.obtener_por_id(area_id)
+
+        total_celulas = self._session.exec(
+            select(func.count())
+            .select_from(Celula)
+            .where(Celula.area_id == area_id)
+        ).one()
+        if total_celulas > 0:
+            raise ValueError(
+                "No se puede eliminar el área porque tiene células asociadas."
+            )
+
+        total_auditorias = self._session.exec(
+            select(func.count())
+            .select_from(Auditoria)
+            .where(Auditoria.area_id == area_id)
+        ).one()
+        if total_auditorias > 0:
+            raise ValueError(
+                "No se puede eliminar el área porque tiene auditorías asociadas."
+            )
+
+        total_usuarios = self._session.exec(
+            select(func.count())
+            .select_from(UsuarioArea)
+            .where(UsuarioArea.area_id == area_id)
+        ).one()
+        if total_usuarios > 0:
+            raise ValueError(
+                "No se puede eliminar el área porque tiene usuarios asignados."
+            )
+
+        self._repo.eliminar(area)

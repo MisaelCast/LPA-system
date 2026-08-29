@@ -6,6 +6,7 @@ import {
   crearCapa,
   actualizarCapa,
   cambiarEstadoCapa,
+  eliminarCapa,
 } from '@/services/capa.service'
 
 export const useCapasStore = defineStore('capas', () => {
@@ -37,6 +38,11 @@ export const useCapasStore = defineStore('capas', () => {
     await cargarCapas()
   }
 
+  async function eliminar(id: number): Promise<void> {
+    await eliminarCapa(id)
+    await cargarCapas()
+  }
+
   return {
     capas,
     cargando,
@@ -44,5 +50,6 @@ export const useCapasStore = defineStore('capas', () => {
     crear,
     actualizar,
     cambiarEstado,
+    eliminar,
   }
 })

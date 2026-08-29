@@ -25,6 +25,10 @@ export function cambiarEstadoArea(
     .then((res) => res.data)
 }
 
+export function eliminarArea(id: number): Promise<void> {
+  return api.delete(`/areas/${id}`).then(() => undefined)
+}
+
 /* --- Células --- */
 
 export function obtenerCelulas(areaId: number): Promise<Celula[]> {
@@ -58,4 +62,8 @@ export function cambiarEstadoCelula(
   return api
     .patch<Celula>(`/celulas/${id}/estado`, { activa })
     .then((res) => res.data)
+}
+
+export function eliminarCelula(id: number): Promise<void> {
+  return api.delete(`/celulas/${id}`).then(() => undefined)
 }

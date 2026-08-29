@@ -1,6 +1,6 @@
 """Logica de negocio para la entidad Capa."""
 
-from sqlmodel import Session
+from sqlmodel import Session, func, select
 
 from app.models.capa import Capa
 from app.repositories.capa_repository import CapaRepository
@@ -12,6 +12,7 @@ class CapaService:
 
     def __init__(self, session: Session) -> None:
         self._repo = CapaRepository(session)
+        self._session = session
 
     def listar(self, skip: int = 0, limit: int = 100) -> list[Capa]:
         """Obtiene un listado paginado de capas."""
@@ -80,3 +81,25 @@ class CapaService:
 
         capa.activa = activa
         return self._repo.actualizar(capa)
+
+    def eliminar(self, capa_id: int) -> None:
+        """Elimina fisicamente una capa si no tiene auditorias asociadas.
+
+        Raises:
+            ValueError: Si la capa no existe o tiene auditorias asociadas.
+        """
+        from app.models.auditoria import Auditoria
+
+        capa = self.obtener_por_id(capa_id)
+
+        total_auditorias = self._session.exec(
+            select(func.count())
+            .select_from(Auditoria)
+            .where(Auditoria.capa_id == capa_id)
+        ).one()
+        if total_auditorias > 0:
+            raise ValueError(
+                "No se puede eliminar la capa porque tiene auditorías asociadas."
+            )
+
+        self._repo.eliminar(capa)

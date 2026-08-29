@@ -48,3 +48,8 @@ class AuditoriaRepository:
         self._session.commit()
         self._session.refresh(auditoria)
         return auditoria
+
+    def eliminar(self, auditoria: Auditoria) -> None:
+        """Elimina fisicamente una auditoria de la base de datos."""
+        self._session.delete(auditoria)
+        self._session.commit()

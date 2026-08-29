@@ -44,3 +44,8 @@ class AreaRepository:
         self._session.commit()
         self._session.refresh(area)
         return area
+
+    def eliminar(self, area: Area) -> None:
+        """Elimina fisicamente un area de la base de datos."""
+        self._session.delete(area)
+        self._session.commit()

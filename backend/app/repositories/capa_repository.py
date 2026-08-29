@@ -44,3 +44,8 @@ class CapaRepository:
         self._session.commit()
         self._session.refresh(capa)
         return capa
+
+    def eliminar(self, capa: Capa) -> None:
+        """Elimina fisicamente una capa de la base de datos."""
+        self._session.delete(capa)
+        self._session.commit()

@@ -24,3 +24,7 @@ export function cambiarEstadoAuditoria(
     .patch<Auditoria>(`/auditorias/${id}/estado`, { activa })
     .then((res) => res.data)
 }
+
+export function eliminarAuditoria(id: number): Promise<void> {
+  return api.delete(`/auditorias/${id}`).then(() => undefined)
+}

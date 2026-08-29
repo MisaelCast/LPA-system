@@ -90,19 +90,17 @@ async function guardarEdicion() {
   }
 }
 
-async function toggleEstado(c: Capa) {
-  const accion = c.activa ? 'desactivar' : 'activar'
-  if (!window.confirm(`¿Desea ${accion} esta capa?`)) return
+async function eliminarCapa(c: Capa) {
+  if (!window.confirm(`¿Está seguro de que desea eliminar la capa "${c.nombre}"?\n\nEsta acción no se puede deshacer.`)) return
 
   mensaje.value = ''
   error.value = ''
 
   try {
-    await store.cambiarEstado(c.id, !c.activa)
-    const estado = c.activa ? 'desactivada' : 'activada'
-    mensaje.value = `Capa ${estado} correctamente.`
+    await store.eliminar(c.id)
+    mensaje.value = 'Capa eliminada correctamente.'
   } catch (err: unknown) {
-    mostrarError('cambiar el estado de la capa', err)
+    mostrarError('eliminar la capa', err)
   }
 }
 </script>
@@ -199,12 +197,8 @@ async function toggleEstado(c: Capa) {
               <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(c)">
                 Editar
               </button>
-              <button
-                class="btn btn-sm"
-                :class="c.activa ? 'btn-danger' : 'btn-success'"
-                @click="toggleEstado(c)"
-              >
-                {{ c.activa ? 'Desactivar' : 'Activar' }}
+              <button class="btn btn-sm btn-danger" @click="eliminarCapa(c)">
+                Eliminar
               </button>
             </template>
           </td>

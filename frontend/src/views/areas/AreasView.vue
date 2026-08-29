@@ -14,7 +14,6 @@ const modalEditarAbierto = ref(false)
 const areaEditando = ref<Area | null>(null)
 const formNombre = ref('')
 const formCelulas = ref('')
-const formActiva = ref(true)
 const formError = ref('')
 const formGuardando = ref(false)
 
@@ -142,7 +141,6 @@ async function confirmarCrear() {
 function abrirModalEditar(a: Area) {
   areaEditando.value = a
   formNombre.value = a.nombre
-  formActiva.value = a.activa
   formError.value = ''
   modalEditarAbierto.value = true
 }
@@ -167,9 +165,6 @@ async function confirmarEditar() {
     if (nuevoNombre !== area.nombre) {
       await store.actualizar(area.id, { nombre: nuevoNombre })
     }
-    if (formActiva.value !== area.activa) {
-      await store.cambiarEstado(area.id, formActiva.value)
-    }
     mostrarToast('ok', 'Área actualizada.')
     modalEditarAbierto.value = false
     areaEditando.value = null
@@ -177,6 +172,17 @@ async function confirmarEditar() {
     mostrarError('actualizar el área', err)
   } finally {
     formGuardando.value = false
+  }
+}
+
+/* ——— Eliminar área ——— */
+async function eliminarArea(a: Area) {
+  if (!window.confirm(`¿Está seguro de que desea eliminar el área "${a.nombre}"?\n\nEsta acción no se puede deshacer.`)) return
+  try {
+    await store.eliminar(a.id)
+    mostrarToast('ok', 'Área eliminada correctamente.')
+  } catch (err) {
+    mostrarError('eliminar el área', err)
   }
 }
 
@@ -248,13 +254,14 @@ async function guardarEdicionCelula(areaId: number) {
   }
 }
 
-/* ——— Toggle estado célula ——— */
-async function toggleEstadoCelula(c: Celula, areaId: number) {
+/* ——— Eliminar célula ——— */
+async function eliminarCelula(c: Celula, areaId: number) {
+  if (!window.confirm(`¿Está seguro de que desea eliminar la célula ${c.numero}?\n\nEsta acción no se puede deshacer.`)) return
   try {
-    await store.cambiarEstadoCelulaEnArea(c.id, areaId, !c.activa)
-    mostrarToast('ok', `Célula ${c.activa ? 'desactivada' : 'activada'}.`)
+    await store.eliminarCelulaEnArea(c.id, areaId)
+    mostrarToast('ok', 'Célula eliminada correctamente.')
   } catch (err) {
-    mostrarError('cambiar el estado de la célula', err)
+    mostrarError('eliminar la célula', err)
   }
 }
 
@@ -420,6 +427,16 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                 <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
               </svg>
             </button>
+            <button
+              class="icon-btn icon-btn--danger"
+              title="Eliminar área"
+              aria-label="Eliminar área"
+              @click="eliminarArea(a)"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.5 9.5h7L12 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
         </button>
 
@@ -494,17 +511,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                     </svg>
                   </button>
                   <button
-                    class="icon-btn"
-                    :title="c.activa ? 'Desactivar célula' : 'Activar célula'"
-                    :aria-label="c.activa ? 'Desactivar célula' : 'Activar célula'"
-                    @click="toggleEstadoCelula(c, a.id)"
+                    class="icon-btn icon-btn--danger"
+                    title="Eliminar célula"
+                    aria-label="Eliminar célula"
+                    @click="eliminarCelula(c, a.id)"
                   >
-                    <svg v-if="c.activa" viewBox="0 0 16 16" aria-hidden="true">
-                      <rect x="4" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
-                      <rect x="9" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
-                    </svg>
-                    <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M5 3l8 5-8 5V3z" fill="currentColor"/>
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.5 9.5h7L12 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                   </button>
                 </div>
@@ -642,24 +655,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               @keyup.enter="confirmarEditar"
             />
           </label>
-          <div class="field-toggle">
-            <span class="field-toggle-label">Estado</span>
-            <label class="switch">
-              <input
-                type="checkbox"
-                v-model="formActiva"
-              />
-              <span class="switch-track">
-                <span class="switch-thumb"></span>
-              </span>
-              <span class="switch-text">
-                {{ formActiva ? 'Activa' : 'Inactiva' }}
-              </span>
-            </label>
-            <small class="field-toggle-hint">
-              Las áreas inactivas no aparecen en la selección de auditorías.
-            </small>
-          </div>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -1216,6 +1211,16 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .icon-btn--cancel:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.icon-btn--danger {
+  color: #dc2626;
+}
+
+.icon-btn--danger:hover {
   background: #fee2e2;
   color: #b91c1c;
   border-color: #fca5a5;

@@ -78,6 +78,31 @@ def cambiar_estado_auditoria(
         )
 
 
+@router.delete("/auditorias/{auditoria_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_auditoria(
+    auditoria_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> None:
+    """Elimina fisicamente una auditoria del sistema.
+
+    Solo accesible por usuarios con rol **Administrador**.
+    """
+    service = AuditoriaService(session)
+    try:
+        service.eliminar(auditoria_id)
+    except ValueError as error:
+        if "no encontrada" in str(error).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
+
+
 @router.put("/auditorias/{auditoria_id}", response_model=AuditoriaRead)
 def actualizar_auditoria(
     auditoria_id: int,

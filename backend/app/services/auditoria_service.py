@@ -1,6 +1,6 @@
 """Logica de negocio para la entidad Auditoria."""
 
-from sqlmodel import Session
+from sqlmodel import Session, func, select
 
 from app.models.auditoria import Auditoria
 from app.repositories.auditoria_repository import AuditoriaRepository
@@ -155,3 +155,38 @@ class AuditoriaService:
         auditoria.activa = activa
         actualizada = self._repo.actualizar(auditoria)
         return self._enriquecer_read(actualizada)
+
+    def eliminar(self, auditoria_id: int) -> None:
+        """Elimina fisicamente una auditoria si no tiene ejecuciones realizadas.
+
+        Si la auditoria no tiene ejecuciones, tambien se eliminan sus criterios
+        asociados (no existen respuestas que los referencien).
+
+        Raises:
+            ValueError: Si la auditoria no existe o tiene ejecuciones asociadas.
+        """
+        from app.models.criterio import Criterio
+        from app.models.ejecucion_auditoria import EjecucionAuditoria
+
+        auditoria = self._repo.obtener_por_id(auditoria_id)
+        if auditoria is None:
+            raise ValueError("Auditoria no encontrada.")
+
+        total_ejecuciones = self._session.exec(
+            select(func.count())
+            .select_from(EjecucionAuditoria)
+            .where(EjecucionAuditoria.auditoria_id == auditoria_id)
+        ).one()
+        if total_ejecuciones > 0:
+            raise ValueError(
+                "No se puede eliminar la auditoría porque tiene ejecuciones "
+                "realizadas asociadas."
+            )
+
+        criterios = self._session.exec(
+            select(Criterio).where(Criterio.auditoria_id == auditoria_id)
+        ).all()
+        for criterio in criterios:
+            self._session.delete(criterio)
+
+        self._repo.eliminar(auditoria)

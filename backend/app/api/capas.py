@@ -73,6 +73,31 @@ def cambiar_estado_capa(
         )
 
 
+@router.delete("/capas/{capa_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_capa(
+    capa_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> None:
+    """Elimina fisicamente una capa del sistema.
+
+    Solo accesible por usuarios con rol **Administrador**.
+    """
+    service = CapaService(session)
+    try:
+        service.eliminar(capa_id)
+    except ValueError as error:
+        if "no encontrada" in str(error).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
+
+
 @router.put("/capas/{capa_id}", response_model=CapaRead)
 def actualizar_capa(
     capa_id: int,

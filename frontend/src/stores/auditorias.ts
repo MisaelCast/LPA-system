@@ -6,6 +6,7 @@ import {
   crearAuditoria,
   actualizarAuditoria,
   cambiarEstadoAuditoria,
+  eliminarAuditoria,
 } from '@/services/auditoria.service'
 
 export const useAuditoriasStore = defineStore('auditorias', () => {
@@ -37,6 +38,11 @@ export const useAuditoriasStore = defineStore('auditorias', () => {
     await cargarAuditorias()
   }
 
+  async function eliminar(id: number): Promise<void> {
+    await eliminarAuditoria(id)
+    await cargarAuditorias()
+  }
+
   return {
     auditorias,
     cargando,
@@ -44,5 +50,6 @@ export const useAuditoriasStore = defineStore('auditorias', () => {
     crear,
     actualizar,
     cambiarEstado,
+    eliminar,
   }
 })

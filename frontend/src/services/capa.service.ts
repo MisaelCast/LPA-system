@@ -24,3 +24,7 @@ export function cambiarEstadoCapa(
     .patch<Capa>(`/capas/${id}/estado`, { activa })
     .then((res) => res.data)
 }
+
+export function eliminarCapa(id: number): Promise<void> {
+  return api.delete(`/capas/${id}`).then(() => undefined)
+}

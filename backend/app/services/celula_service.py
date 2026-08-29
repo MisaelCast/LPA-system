@@ -1,6 +1,6 @@
 """Logica de negocio para la entidad Celula."""
 
-from sqlmodel import Session
+from sqlmodel import Session, func, select
 
 from app.models.celula import Celula
 from app.repositories.celula_repository import CelulaRepository
@@ -12,6 +12,7 @@ class CelulaService:
 
     def __init__(self, session: Session) -> None:
         self._repo = CelulaRepository(session)
+        self._session = session
 
     def listar_por_area(
         self, area_id: int, skip: int = 0, limit: int = 100
@@ -90,3 +91,26 @@ class CelulaService:
 
         celula.activa = activa
         return self._repo.actualizar(celula)
+
+    def eliminar(self, celula_id: int) -> None:
+        """Elimina fisicamente una celula si no tiene auditorias realizadas.
+
+        Raises:
+            ValueError: Si la celula no existe o tiene ejecuciones asociadas.
+        """
+        from app.models.ejecucion_auditoria import EjecucionAuditoria
+
+        celula = self.obtener_por_id(celula_id)
+
+        total_ejecuciones = self._session.exec(
+            select(func.count())
+            .select_from(EjecucionAuditoria)
+            .where(EjecucionAuditoria.celula_id == celula_id)
+        ).one()
+        if total_ejecuciones > 0:
+            raise ValueError(
+                "No se puede eliminar la célula porque tiene auditorías "
+                "realizadas asociadas."
+            )
+
+        self._repo.eliminar(celula)

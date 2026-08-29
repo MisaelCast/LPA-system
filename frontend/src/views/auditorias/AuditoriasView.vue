@@ -154,18 +154,17 @@ async function guardarEdicion() {
   }
 }
 
-/* --- Estado --- */
-async function toggleEstado(a: Auditoria) {
-  const accion = a.activa ? 'desactivar' : 'activar'
-  if (!window.confirm(`Desea ${accion} esta auditoria?`)) return
+/* --- Eliminar --- */
+async function eliminarAuditoria(a: Auditoria) {
+  if (!window.confirm(`¿Está seguro de que desea eliminar la auditoría "${a.nombre}"?\n\nEsta acción no se puede deshacer.`)) return
   mensaje.value = ''
   error.value = ''
 
   try {
-    await auditoriaStore.cambiarEstado(a.id, !a.activa)
-    mensaje.value = `Auditoria ${accion}a correctamente.`
+    await auditoriaStore.eliminar(a.id)
+    mensaje.value = 'Auditoria eliminada correctamente.'
   } catch (err: unknown) {
-    mostrarError('cambiar el estado', err)
+    mostrarError('eliminar la auditoria', err)
   }
 }
 
@@ -405,12 +404,8 @@ async function toggleEstadoCriterio(auditoriaId: number, c: { id: number; activo
                 </template>
                 <template v-else>
                   <button class="btn btn-sm btn-secondary" @click="iniciarEdicion(a)">Editar</button>
-                  <button
-                    class="btn btn-sm"
-                    :class="a.activa ? 'btn-danger' : 'btn-success'"
-                    @click="toggleEstado(a)"
-                  >
-                    {{ a.activa ? 'Desactivar' : 'Activar' }}
+                  <button class="btn btn-sm btn-danger" @click="eliminarAuditoria(a)">
+                    Eliminar
                   </button>
                 </template>
               </td>

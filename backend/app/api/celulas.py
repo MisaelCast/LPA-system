@@ -111,3 +111,28 @@ def cambiar_estado_celula(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
         )
+
+
+@router.delete("/celulas/{celula_id}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_celula(
+    celula_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> None:
+    """Elimina fisicamente una celula del sistema.
+
+    Solo accesible por usuarios con rol **Administrador**.
+    """
+    service = CelulaService(session)
+    try:
+        service.eliminar(celula_id)
+    except ValueError as error:
+        if "no encontrada" in str(error).lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
