@@ -482,7 +482,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 </template>
 
 <style scoped>
-.page { max-width: 900px; margin: 0 auto; padding: 2rem; }
+.page { max-width: 900px; margin: 0 auto; }
 h1 { margin-bottom: 1.5rem; }
 
 .msg { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; background: #f0f0f0; }
