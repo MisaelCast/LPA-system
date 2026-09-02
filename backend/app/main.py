@@ -16,14 +16,13 @@ from app.api.hallazgos import router as hallazgos_router
 from app.api.roles import router as roles_router
 from app.api.usuarios import router as usuarios_router
 from app.config import settings
-from app.db.database import create_db_and_tables, ensure_schema_migrations
 from app.seed import seed_inicial
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    create_db_and_tables()
-    ensure_schema_migrations()
+    # El esquema se administra mediante migraciones de Alembic
+    # (``alembic upgrade head``). Aquí solo se siembran datos iniciales.
     seed_inicial()
     yield
 
