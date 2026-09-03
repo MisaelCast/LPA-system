@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
+from app.models.auditoria import Auditoria
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 
 
@@ -35,6 +36,7 @@ class EjecucionAuditoriaRepository:
         estado: str | None = None,
         fecha_desde: datetime | None = None,
         fecha_hasta: datetime | None = None,
+        area_id: int | None = None,
     ) -> list[EjecucionAuditoria]:
         """Lista ejecuciones con filtros opcionales, ordenadas por fecha DESC."""
         statement = select(EjecucionAuditoria)
@@ -43,6 +45,11 @@ class EjecucionAuditoriaRepository:
             statement = statement.where(
                 EjecucionAuditoria.auditoria_id == auditoria_id
             )
+        if area_id is not None:
+            statement = statement.join(
+                Auditoria,
+                EjecucionAuditoria.auditoria_id == Auditoria.id,
+            ).where(Auditoria.area_id == area_id)
         if celula_id is not None:
             statement = statement.where(EjecucionAuditoria.celula_id == celula_id)
         if usuario_id is not None:

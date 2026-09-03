@@ -291,7 +291,6 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
     <!-- Paso 1: Seleccionar auditoría -->
     <div v-if="paso === 'seleccionar'" class="seleccion">
-      <h2>Selecciona una auditoría</h2>
       <div v-if="auditorias.length === 0" class="msg">No hay auditorías disponibles.</div>
       <div v-else class="lista">
         <div

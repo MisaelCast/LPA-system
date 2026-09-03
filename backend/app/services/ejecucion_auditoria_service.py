@@ -11,6 +11,7 @@ from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import Hallazgo
 from app.models.respuesta import Respuesta
+from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.repositories.ejecucion_auditoria_repository import (
     EjecucionAuditoriaRepository,
@@ -203,6 +204,26 @@ class EjecucionAuditoriaService:
         rol = getattr(usuario, "rol", None)
         return getattr(rol, "nombre", "") == "Administrador"
 
+    def _es_supervisor(self, usuario: Usuario) -> bool:
+        rol = getattr(usuario, "rol", None)
+        return getattr(rol, "nombre", "") == "Supervisor"
+
+    def _validar_puede_modificar(
+        self, ejecucion: EjecucionAuditoria, usuario: Usuario
+    ) -> None:
+        """Garantiza que solo el auditor asignado o un administrador modifiquen.
+
+        Evita que un supervisor (u otro rol) altere la auditoría original.
+        """
+        if usuario.id == ejecucion.usuario_id:
+            return
+        if self._es_admin(usuario):
+            return
+        raise ValueError(
+            "Solo el auditor asignado o un administrador pueden "
+            "modificar esta ejecución."
+        )
+
     def _resumen_de_respuestas(
         self, respuestas: list[Respuesta], total_criterios: int
     ) -> dict:
@@ -279,12 +300,18 @@ class EjecucionAuditoriaService:
         estado: str | None = None,
         fecha_desde: datetime | None = None,
         fecha_hasta: datetime | None = None,
+        area_id: int | None = None,
+        solo_propias: bool = False,
     ) -> list[dict]:
         """Lista las ejecuciones del historial con sus resumenes V/A/R.
 
-        Un auditor solo ve sus propias ejecuciones; un administrador ve todas.
+        Un auditor solo ve sus propias ejecuciones; un supervisor ve todas y un
+        administrador ve todas salvo que se indique ``solo_propias``, en cuyo
+        caso se limita a las propias (vista "Auditorías realizadas").
         """
-        if not self._es_admin(usuario):
+        if solo_propias:
+            usuario_id = usuario.id
+        elif not (self._es_admin(usuario) or self._es_supervisor(usuario)):
             usuario_id = usuario.id
 
         ejecuciones = self._repo.listar_con_filtros(
@@ -296,6 +323,7 @@ class EjecucionAuditoriaService:
             estado=estado,
             fecha_desde=fecha_desde,
             fecha_hasta=fecha_hasta,
+            area_id=area_id,
         )
 
         respuestas_por_ejecucion: dict[int, list[Respuesta]] = {}
@@ -319,6 +347,41 @@ class EjecucionAuditoriaService:
             )
             for e in ejecuciones
         ]
+
+    def obtener_opciones_filtros(self) -> dict:
+        """Devuelve las opciones de filtro para la revisión de auditorías.
+
+        Útil para poblar los selectores de área, célula y auditor de la vista
+        de revisión (Supervisor/Administrador).
+        """
+        areas = list(
+            self._session.exec(
+                select(Area)
+                .where(Area.activa == True)  # noqa: E712
+                .order_by(Area.nombre)
+            ).all()
+        )
+        celulas = list(
+            self._session.exec(
+                select(Celula)
+                .where(Celula.activa == True)  # noqa: E712
+                .order_by(Celula.area_id, Celula.numero)
+            ).all()
+        )
+        auditores = list(
+            self._session.exec(
+                select(Usuario)
+                .join(Rol, Usuario.rol_id == Rol.id)
+                .where(Rol.nombre == "Auditor", Usuario.activo == True)  # noqa: E712
+                .order_by(Usuario.nombre)
+            ).all()
+        )
+
+        return {
+            "areas": areas,
+            "celulas": celulas,
+            "auditores": auditores,
+        }
 
     def obtener_detalle(self, ejecucion_id: int) -> dict:
         """Devuelve el detalle completo de una ejecucion con resumen V/A/R."""
@@ -362,6 +425,8 @@ class EjecucionAuditoriaService:
             raise ValueError(
                 "No se puede modificar una ejecucion ya finalizada."
             )
+
+        self._validar_puede_modificar(ejecucion, usuario)
 
         auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
 
@@ -420,6 +485,8 @@ class EjecucionAuditoriaService:
             raise ValueError("Ejecucion de auditoria no encontrada.")
         if ejecucion.estado == "finalizada":
             raise ValueError("La ejecucion ya esta finalizada.")
+
+        self._validar_puede_modificar(ejecucion, usuario)
 
         criterios_activos = list(
             self._session.exec(

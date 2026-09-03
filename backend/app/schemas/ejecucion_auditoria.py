@@ -3,6 +3,10 @@ from datetime import datetime
 from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
 
+from app.schemas.area import AreaRead
+from app.schemas.celula import CelulaRead
+from app.schemas.usuario import UsuarioRead
+
 
 class EjecucionAuditoriaBase(SQLModel):
     model_config = ConfigDict(from_attributes=True)
@@ -97,3 +101,11 @@ class RespuestaItem(SQLModel):
 
 class GuardarRespuestasRequest(SQLModel):
     respuestas: list[RespuestaItem]
+
+
+class OpcionesFiltrosRevision(SQLModel):
+    """Opciones para los filtros de la revisión de auditorías."""
+
+    areas: list[AreaRead] = []
+    celulas: list[CelulaRead] = []
+    auditores: list[UsuarioRead] = []

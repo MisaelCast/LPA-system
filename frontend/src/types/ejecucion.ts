@@ -1,3 +1,6 @@
+import type { Area, Celula } from '@/types/area'
+import type { Usuario } from '@/types/auth'
+
 export interface CriterioRespuesta {
   id: number
   descripcion: string
@@ -74,4 +77,12 @@ export interface EjecucionesFiltros {
   estado?: string
   fecha_desde?: string
   fecha_hasta?: string
+  area_id?: number
+  solo_propias?: boolean
+}
+
+export interface OpcionesFiltrosRevision {
+  areas: Area[]
+  celulas: Celula[]
+  auditores: Usuario[]
 }

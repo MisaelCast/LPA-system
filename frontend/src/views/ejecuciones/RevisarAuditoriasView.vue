@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import type { Auditoria } from '@/types/auditoria'
+import { onMounted, ref, computed } from 'vue'
+import type { Area, Celula } from '@/types/area'
+import type { Usuario } from '@/types/auth'
 import type {
   EjecucionAuditoriaListItem,
   EjecucionAuditoriaDetalle,
@@ -9,34 +9,47 @@ import type {
 import {
   listarEjecuciones,
   obtenerEjecucionDetalle,
-  obtenerAuditoriasDisponibles,
+  obtenerOpcionesFiltrosRevision,
 } from '@/services/ejecucion.service'
-
-const router = useRouter()
 
 const cargando = ref(false)
 const error = ref('')
 const ejecuciones = ref<EjecucionAuditoriaListItem[]>([])
-const auditorias = ref<Auditoria[]>([])
+
+const areas = ref<Area[]>([])
+const celulas = ref<Celula[]>([])
+const auditores = ref<Usuario[]>([])
 
 const fEstado = ref('')
-const fAuditoriaId = ref<number | null>(null)
+const fAreaId = ref<number | null>(null)
+const fCelulaId = ref<number | null>(null)
+const fAuditorId = ref<number | null>(null)
 const fFechaDesde = ref('')
 const fFechaHasta = ref('')
+
+const celulasFiltradas = computed(() => {
+  if (!fAreaId.value) return celulas.value
+  return celulas.value.filter((c) => c.area_id === fAreaId.value)
+})
 
 const detalleAbierto = ref(false)
 const detalleCargando = ref(false)
 const detalle = ref<EjecucionAuditoriaDetalle | null>(null)
 
 onMounted(async () => {
-  await Promise.all([cargar(), cargarAuditorias()])
+  await Promise.all([cargarOpciones(), cargar()])
 })
 
-async function cargarAuditorias() {
+async function cargarOpciones() {
   try {
-    auditorias.value = await obtenerAuditoriasDisponibles()
+    const opciones = await obtenerOpcionesFiltrosRevision()
+    areas.value = opciones.areas
+    celulas.value = opciones.celulas
+    auditores.value = opciones.auditores
   } catch {
-    auditorias.value = []
+    areas.value = []
+    celulas.value = []
+    auditores.value = []
   }
 }
 
@@ -46,15 +59,16 @@ async function cargar() {
   try {
     ejecuciones.value = await listarEjecuciones({
       estado: fEstado.value || undefined,
-      auditoria_id: fAuditoriaId.value ?? undefined,
+      area_id: fAreaId.value ?? undefined,
+      celula_id: fCelulaId.value ?? undefined,
+      usuario_id: fAuditorId.value ?? undefined,
       fecha_desde: fFechaDesde.value || undefined,
       fecha_hasta: fFechaHasta.value || undefined,
-      solo_propias: true,
     })
   } catch (err) {
     error.value =
       (err as { response?: { data?: { detail?: string } } })?.response?.data
-        ?.detail || 'Error al cargar el historial.'
+        ?.detail || 'Error al cargar las auditorías.'
   } finally {
     cargando.value = false
   }
@@ -62,7 +76,9 @@ async function cargar() {
 
 function limpiarFiltros() {
   fEstado.value = ''
-  fAuditoriaId.value = null
+  fAreaId.value = null
+  fCelulaId.value = null
+  fAuditorId.value = null
   fFechaDesde.value = ''
   fFechaHasta.value = ''
   cargar()
@@ -108,18 +124,6 @@ function cerrarDetalle() {
   detalle.value = null
 }
 
-function continuar(e: EjecucionAuditoriaListItem) {
-  router.push({ name: 'ejecutar', query: { id: String(e.id) } })
-}
-
-function continuarDesdeDetalle() {
-  const id = detalle.value?.id
-  if (id) {
-    cerrarDetalle()
-    router.push({ name: 'ejecutar', query: { id: String(id) } })
-  }
-}
-
 function claseValor(valor: string | null): string {
   if (valor === 'V') return 'chip-v'
   if (valor === 'A') return 'chip-a'
@@ -132,8 +136,8 @@ function claseValor(valor: string | null): string {
   <div class="page">
     <header class="page-header">
       <div>
-        <h1>Auditorías realizadas</h1>
-        <p class="subtitle">Historial de ejecuciones de auditoría.</p>
+        <h1>Revisión de auditorías</h1>
+        <p class="subtitle">Consulta las auditorías realizadas por los auditores.</p>
       </div>
     </header>
 
@@ -145,10 +149,24 @@ function claseValor(valor: string | null): string {
         <option value="finalizada">Finalizada</option>
       </select>
 
-      <select v-model.number="fAuditoriaId" @change="cargar">
-        <option :value="null">Auditoría: todas</option>
-        <option v-for="a in auditorias" :key="a.id" :value="a.id">
+      <select v-model.number="fAreaId" @change="cargar">
+        <option :value="null">Área: todas</option>
+        <option v-for="a in areas" :key="a.id" :value="a.id">
           {{ a.nombre }}
+        </option>
+      </select>
+
+      <select v-model.number="fCelulaId" @change="cargar">
+        <option :value="null">Célula: todas</option>
+        <option v-for="c in celulasFiltradas" :key="c.id" :value="c.id">
+          Célula {{ c.numero }}
+        </option>
+      </select>
+
+      <select v-model.number="fAuditorId" @change="cargar">
+        <option :value="null">Auditor: todos</option>
+        <option v-for="u in auditores" :key="u.id" :value="u.id">
+          {{ u.nombre }}
         </option>
       </select>
 
@@ -234,19 +252,12 @@ function claseValor(valor: string | null): string {
             >
               Ver
             </button>
-            <button
-              v-if="!esFinalizada(e.estado)"
-              class="btn btn-sm btn-primary"
-              @click.stop="continuar(e)"
-            >
-              Continuar
-            </button>
           </td>
         </tr>
       </tbody>
     </table>
 
-    <!-- Modal detalle -->
+    <!-- Modal detalle (solo lectura) -->
     <div
       v-if="detalleAbierto"
       class="modal-backdrop"
@@ -287,6 +298,9 @@ function claseValor(valor: string | null): string {
                 >
                   {{ estadoLabel(detalle.estado) }}
                 </span>
+              </p>
+              <p v-if="detalle.observaciones">
+                <strong>Observaciones:</strong> {{ detalle.observaciones }}
               </p>
             </div>
 
@@ -352,13 +366,6 @@ function claseValor(valor: string | null): string {
         <footer class="modal-footer">
           <button class="btn btn-secondary" @click="cerrarDetalle">
             Cerrar
-          </button>
-          <button
-            v-if="detalle && !esFinalizada(detalle.estado)"
-            class="btn btn-primary"
-            @click="continuarDesdeDetalle"
-          >
-            Continuar auditoría
           </button>
         </footer>
       </div>
@@ -535,17 +542,6 @@ tr:last-child td {
 .btn-sm {
   padding: 0.25rem 0.6rem;
   font-size: 0.75rem;
-}
-
-.btn-primary {
-  background: #2563eb;
-  color: #fff;
-  padding: 0.5rem 1rem;
-  font-weight: 600;
-}
-
-.btn-primary:hover {
-  background: #1d4ed8;
 }
 
 .btn-secondary {

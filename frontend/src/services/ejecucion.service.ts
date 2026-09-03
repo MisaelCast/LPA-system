@@ -8,6 +8,7 @@ import type {
   EjecucionesFiltros,
   GuardarRespuestasRequest,
   IniciarEjecucionRequest,
+  OpcionesFiltrosRevision,
 } from '@/types/ejecucion'
 
 export function obtenerAuditoriasDisponibles(): Promise<Auditoria[]> {
@@ -75,5 +76,11 @@ export function obtenerEjecucionDetalle(
 ): Promise<EjecucionAuditoriaDetalle> {
   return api
     .get<EjecucionAuditoriaDetalle>(`/ejecuciones-auditoria/${ejecucionId}`)
+    .then((res) => res.data)
+}
+
+export function obtenerOpcionesFiltrosRevision(): Promise<OpcionesFiltrosRevision> {
+  return api
+    .get<OpcionesFiltrosRevision>('/ejecuciones-auditoria/filtros')
     .then((res) => res.data)
 }

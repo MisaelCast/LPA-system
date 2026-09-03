@@ -65,6 +65,12 @@ const router = createRouter({
           name: 'auditorias-realizadas',
           component: () => import('@/views/ejecuciones/AuditoriasRealizadasView.vue'),
         },
+        {
+          path: 'revision-auditorias',
+          name: 'revision-auditorias',
+          component: () => import('@/views/ejecuciones/RevisarAuditoriasView.vue'),
+          meta: { roles: ['Supervisor', 'Administrador'] },
+        },
       ],
     },
   ],

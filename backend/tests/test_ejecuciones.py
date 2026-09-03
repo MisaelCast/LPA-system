@@ -93,6 +93,54 @@ class TestListarEjecuciones:
         kwargs = mock_listar.call_args.kwargs
         assert kwargs["usuario_id"] == 7
 
+    def test_listar_ejecuciones_supervisor_ve_todas(self):
+        """Un supervisor ve todas las ejecuciones (no se limita a las propias)."""
+        supervisor = _usuario(id_=7, rol_nombre="Supervisor")
+        with patch.object(
+            EjecucionAuditoriaRepository, "listar_con_filtros"
+        ) as mock_listar:
+            mock_listar.return_value = []
+            self.service.listar_ejecuciones(supervisor, skip=0, limit=100)
+
+        kwargs = mock_listar.call_args.kwargs
+        assert kwargs["usuario_id"] is None
+
+    def test_listar_ejecuciones_admin_ve_todas_sin_usuario_id(self):
+        """Un administrador ve todas sin forzar usuario_id."""
+        admin = _usuario(id_=7, rol_nombre="Administrador")
+        with patch.object(
+            EjecucionAuditoriaRepository, "listar_con_filtros"
+        ) as mock_listar:
+            mock_listar.return_value = []
+            self.service.listar_ejecuciones(admin, skip=0, limit=100)
+
+        kwargs = mock_listar.call_args.kwargs
+        assert kwargs["usuario_id"] is None
+
+    def test_filtro_area_se_propaga(self):
+        """El filtro por area se pasa al repositorio."""
+        admin = _usuario(rol_nombre="Administrador")
+        with patch.object(
+            EjecucionAuditoriaRepository, "listar_con_filtros"
+        ) as mock_listar:
+            mock_listar.return_value = []
+            self.service.listar_ejecuciones(admin, area_id=3)
+
+        kwargs = mock_listar.call_args.kwargs
+        assert kwargs["area_id"] == 3
+
+    def test_listar_ejecuciones_admin_solo_propias(self):
+        """Con solo_propias, el admin se limita a sus propias ejecuciones."""
+        admin = _usuario(id_=7, rol_nombre="Administrador")
+        with patch.object(
+            EjecucionAuditoriaRepository, "listar_con_filtros"
+        ) as mock_listar:
+            mock_listar.return_value = []
+            self.service.listar_ejecuciones(admin, solo_propias=True)
+
+        kwargs = mock_listar.call_args.kwargs
+        assert kwargs["usuario_id"] == 7
+
     def test_filtros_se_propagan(self):
         """Los filtros se pasan al repositorio."""
         admin = _usuario(rol_nombre="Administrador")
@@ -176,6 +224,36 @@ class TestObtenerDetalle:
             mock_obtener.side_effect = ValueError("Ejecucion de auditoria no encontrada.")
             with pytest.raises(ValueError, match="no encontrada"):
                 self.service.obtener_detalle(999)
+
+
+class TestPermisoModificacion:
+    """Verifica que solo el auditor asignado o un administrador modifiquen."""
+
+    def setup_method(self):
+        self.mock_session = MagicMock(spec=Session)
+        self.service = EjecucionAuditoriaService(self.mock_session)
+
+    def test_supervisor_no_puede_modificar_ejecucion_ajena(self):
+        """Un supervisor no puede modificar la auditoría original del auditor."""
+        supervisor = _usuario(id_=9, rol_nombre="Supervisor")
+        ejecucion = _ejecucion(usuario_id=1)
+
+        with pytest.raises(ValueError, match="Solo el auditor asignado"):
+            self.service._validar_puede_modificar(ejecucion, supervisor)
+
+    def test_auditor_asignado_puede_modificar(self):
+        """El auditor dueño de la ejecución puede modificarla."""
+        auditor = _usuario(id_=1, rol_nombre="Auditor")
+        ejecucion = _ejecucion(usuario_id=1)
+
+        self.service._validar_puede_modificar(ejecucion, auditor)
+
+    def test_admin_puede_modificar(self):
+        """El administrador puede modificar cualquier ejecución."""
+        admin = _usuario(id_=5, rol_nombre="Administrador")
+        ejecucion = _ejecucion(usuario_id=1)
+
+        self.service._validar_puede_modificar(ejecucion, admin)
 
 
 class TestEstadoEjecucion:

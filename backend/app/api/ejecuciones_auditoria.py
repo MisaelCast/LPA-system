@@ -17,6 +17,7 @@ from app.schemas.ejecucion_auditoria import (
     EjecucionAuditoriaRead,
     GuardarRespuestasRequest,
     IniciarEjecucionRequest,
+    OpcionesFiltrosRevision,
 )
 from app.schemas.hallazgo import HallazgoDetallado
 from app.services.ejecucion_auditoria_service import EjecucionAuditoriaService
@@ -38,6 +39,8 @@ def listar_ejecuciones(
     estado: str | None = Query(default=None),
     fecha_desde: datetime | None = Query(default=None),
     fecha_hasta: datetime | None = Query(default=None),
+    area_id: int | None = Query(default=None),
+    solo_propias: bool = Query(default=False),
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
@@ -53,7 +56,22 @@ def listar_ejecuciones(
         estado=estado,
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
+        area_id=area_id,
+        solo_propias=solo_propias,
     )
+
+
+@router.get("/filtros", response_model=OpcionesFiltrosRevision)
+def opciones_filtros_revision(
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Supervisor", "Administrador")),
+):
+    """Devuelve las opciones de filtro (áreas, células y auditores).
+
+    Solo accesible por usuarios con rol **Supervisor** o **Administrador**.
+    """
+    service = EjecucionAuditoriaService(session)
+    return service.obtener_opciones_filtros()
 
 
 @router.get("/disponibles", response_model=list[AuditoriaRead])
