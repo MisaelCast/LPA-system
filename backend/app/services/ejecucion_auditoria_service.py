@@ -208,6 +208,10 @@ class EjecucionAuditoriaService:
         rol = getattr(usuario, "rol", None)
         return getattr(rol, "nombre", "") == "Supervisor"
 
+    def _es_gerente(self, usuario: Usuario) -> bool:
+        rol = getattr(usuario, "rol", None)
+        return getattr(rol, "nombre", "") == "Gerente"
+
     def _validar_puede_modificar(
         self, ejecucion: EjecucionAuditoria, usuario: Usuario
     ) -> None:
@@ -305,13 +309,17 @@ class EjecucionAuditoriaService:
     ) -> list[dict]:
         """Lista las ejecuciones del historial con sus resumenes V/A/R.
 
-        Un auditor solo ve sus propias ejecuciones; un supervisor ve todas y un
-        administrador ve todas salvo que se indique ``solo_propias``, en cuyo
-        caso se limita a las propias (vista "Auditorías realizadas").
+        Un auditor solo ve sus propias ejecuciones; un supervisor o gerente ve
+        todas y un administrador ve todas salvo que se indique ``solo_propias``,
+        en cuyo caso se limita a las propias (vista "Auditorías realizadas").
         """
         if solo_propias:
             usuario_id = usuario.id
-        elif not (self._es_admin(usuario) or self._es_supervisor(usuario)):
+        elif not (
+            self._es_admin(usuario)
+            or self._es_supervisor(usuario)
+            or self._es_gerente(usuario)
+        ):
             usuario_id = usuario.id
 
         ejecuciones = self._repo.listar_con_filtros(
@@ -352,7 +360,7 @@ class EjecucionAuditoriaService:
         """Devuelve las opciones de filtro para la revisión de auditorías.
 
         Útil para poblar los selectores de área, célula y auditor de la vista
-        de revisión (Supervisor/Administrador).
+        de revisión (Supervisor/Gerente/Administrador).
         """
         areas = list(
             self._session.exec(

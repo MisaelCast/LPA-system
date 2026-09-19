@@ -12,7 +12,7 @@ Sistema web para la gestión y ejecución de auditorías de procesos LPA (Layer 
 
 ## Funcionalidades principales
 
-- Autenticación con roles (Administrador, Supervisor, Auditor) y rutas protegidas.
+- Autenticación con roles (Administrador, Gerente, Supervisor, Auditor) y rutas protegidas.
 - Gestión de usuarios, áreas, células, capas, frecuencias y auditorías.
 - Definición de criterios por auditoría.
 - Ejecución de auditorías con respuestas (verde, amarillo, rojo, no aplica).

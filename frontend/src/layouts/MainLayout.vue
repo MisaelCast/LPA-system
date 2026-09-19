@@ -41,7 +41,7 @@ function handleLogout() {
         <RouterLink to="/ejecutar">Ejecutar Auditoría</RouterLink>
         <RouterLink to="/auditorias-realizadas">Auditorías realizadas</RouterLink>
         <RouterLink
-          v-if="authStore.isAdmin || authStore.isSupervisor"
+          v-if="authStore.isAdmin || authStore.isSupervisor || authStore.isGerente"
           to="/revision-auditorias"
         >Revisión de auditorías</RouterLink>
       </nav>

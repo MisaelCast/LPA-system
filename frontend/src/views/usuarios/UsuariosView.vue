@@ -281,7 +281,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             <h3>{{ u.nombre }}</h3>
             <span class="usuario-correo">{{ u.correo }}</span>
           </div>
-          <div v-if="authStore.isAdmin" class="usuario-card-actions">
+          <div
+            v-if="authStore.isAdmin && u.rol_nombre !== 'Administrador'"
+            class="usuario-card-actions"
+          >
             <button
               class="icon-btn"
               title="Editar usuario"

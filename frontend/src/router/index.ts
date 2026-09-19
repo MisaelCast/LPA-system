@@ -69,7 +69,7 @@ const router = createRouter({
           path: 'revision-auditorias',
           name: 'revision-auditorias',
           component: () => import('@/views/ejecuciones/RevisarAuditoriasView.vue'),
-          meta: { roles: ['Supervisor', 'Administrador'] },
+          meta: { roles: ['Supervisor', 'Gerente', 'Administrador'] },
         },
       ],
     },

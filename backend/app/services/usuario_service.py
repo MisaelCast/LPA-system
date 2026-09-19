@@ -1,8 +1,9 @@
 """Lógica de negocio para la entidad Usuario."""
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.auth.security import hash_password
+from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.repositories.usuario_repository import UsuarioRepository
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
@@ -13,6 +14,14 @@ class UsuarioService:
 
     def __init__(self, session: Session) -> None:
         self._repo = UsuarioRepository(session)
+        self._session = session
+
+    def _es_rol_administrador(self, rol_id: int) -> bool:
+        """Indica si un identificador de rol corresponde a Administrador."""
+        rol = self._session.exec(
+            select(Rol).where(Rol.id == rol_id)
+        ).first()
+        return rol is not None and rol.nombre == "Administrador"
 
     def listar(self, skip: int = 0, limit: int = 100) -> list[Usuario]:
         """Obtiene un listado paginado de usuarios.
@@ -58,6 +67,11 @@ class UsuarioService:
         if self._repo.obtener_por_correo(datos.correo):
             raise ValueError("Ya existe un usuario con ese correo electrónico.")
 
+        if self._es_rol_administrador(datos.rol_id):
+            raise ValueError(
+                "No se puede crear otro usuario con rol Administrador."
+            )
+
         usuario = Usuario(
             nombre=datos.nombre,
             correo=datos.correo,
@@ -98,6 +112,13 @@ class UsuarioService:
         if datos.activo is not None:
             usuario.activo = datos.activo
         if datos.rol_id is not None:
+            if (
+                datos.rol_id != usuario.rol_id
+                and self._es_rol_administrador(datos.rol_id)
+            ):
+                raise ValueError(
+                    "No se puede asignar el rol Administrador a otro usuario."
+                )
             usuario.rol_id = datos.rol_id
         if datos.contrasena is not None:
             usuario.contrasena_hash = hash_password(datos.contrasena)

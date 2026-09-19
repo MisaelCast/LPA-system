@@ -17,5 +17,9 @@ def listar_roles(
     session: Session = Depends(get_session),
     _: Usuario = Depends(require_roles("Administrador")),
 ) -> list[Rol]:
-    """Lista todos los roles disponibles en el sistema."""
-    return list(session.exec(select(Rol)).all())
+    """Lista los roles asignables al crear/editar usuarios.
+
+    Excluye el rol ``Administrador``: es un rol único que no puede
+    asignarse a nuevos usuarios.
+    """
+    return list(session.exec(select(Rol).where(Rol.nombre != "Administrador")).all())

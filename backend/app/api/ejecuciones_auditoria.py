@@ -64,11 +64,12 @@ def listar_ejecuciones(
 @router.get("/filtros", response_model=OpcionesFiltrosRevision)
 def opciones_filtros_revision(
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Supervisor", "Administrador")),
+    _: Usuario = Depends(require_roles("Supervisor", "Gerente", "Administrador")),
 ):
     """Devuelve las opciones de filtro (áreas, células y auditores).
 
-    Solo accesible por usuarios con rol **Supervisor** o **Administrador**.
+    Solo accesible por usuarios con rol **Supervisor**, **Gerente** o
+    **Administrador**.
     """
     service = EjecucionAuditoriaService(session)
     return service.obtener_opciones_filtros()

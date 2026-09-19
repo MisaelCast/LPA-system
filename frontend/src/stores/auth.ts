@@ -19,6 +19,10 @@ export const useAuthStore = defineStore('auth', () => {
     () => usuario.value?.rol_nombre === 'Supervisor',
   )
 
+  const isGerente = computed(
+    () => usuario.value?.rol_nombre === 'Gerente',
+  )
+
   function setToken(value: string) {
     token.value = value
     localStorage.setItem(LOCAL_STORAGE_KEY, value)
@@ -34,5 +38,5 @@ export const useAuthStore = defineStore('auth', () => {
     usuario.value = await obtenerUsuarioActual()
   }
 
-  return { token, usuario, isAuthenticated, isAdmin, isSupervisor, setToken, clearToken, cargarUsuario }
+  return { token, usuario, isAuthenticated, isAdmin, isSupervisor, isGerente, setToken, clearToken, cargarUsuario }
 })

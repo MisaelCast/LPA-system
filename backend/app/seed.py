@@ -13,7 +13,7 @@ from app.models.frecuencia import Frecuencia
 from app.models.rol import Rol
 from app.models.usuario import Usuario
 
-_ROLES_INICIALES = ["Administrador", "Supervisor", "Auditor"]
+_ROLES_INICIALES = ["Administrador", "Gerente", "Supervisor", "Auditor"]
 _CAPAS_INICIALES = ["Auditor", "Supervisor", "Gerente"]
 _AREAS_INICIALES = [
     ("Ensamble Final", "Área de ensamble final de producto."),
