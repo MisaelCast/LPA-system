@@ -27,3 +27,7 @@ Auditoria LPA.txt
 repomix-output.xml
 
 resumen.md
+
+skills-lock.json
+.agents/
+.playwright-cli/

@@ -46,11 +46,23 @@ async function handleSubmit() {
 
 <template>
   <div class="login-page">
-    <form class="login-card" @submit.prevent="handleSubmit">
-      <h1>LPA System</h1>
-      <p class="subtitle">Iniciar Sesión</p>
+    <div class="login-glow" aria-hidden="true"></div>
 
-      <div v-if="error" class="alert" role="alert">{{ error }}</div>
+    <form class="login-card" @submit.prevent="handleSubmit">
+      <div class="login-brand">
+        <span class="brand-mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h16v16H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/>
+            <path d="M8 12.2l2.8 2.8L16.5 9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </span>
+        <div>
+          <h1>LPA System</h1>
+          <p class="login-subtitle">Auditorías de proceso Layer Process Audit</p>
+        </div>
+      </div>
+
+      <div v-if="error" class="msg msg-err" role="alert">{{ error }}</div>
 
       <div class="field">
         <label for="correo">Correo</label>
@@ -60,6 +72,7 @@ async function handleSubmit() {
           type="email"
           required
           autocomplete="email"
+          placeholder="correo@empresa.com"
         />
       </div>
 
@@ -72,10 +85,11 @@ async function handleSubmit() {
             :type="mostrarContrasena ? 'text' : 'password'"
             required
             autocomplete="current-password"
+            placeholder="Tu contraseña"
           />
           <button
             type="button"
-            class="toggle-password"
+            class="icon-btn toggle-password"
             :aria-label="mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'"
             @click="mostrarContrasena = !mostrarContrasena"
           >
@@ -85,7 +99,7 @@ async function handleSubmit() {
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.8"
               stroke-linecap="round"
               stroke-linejoin="round"
             >
@@ -98,7 +112,7 @@ async function handleSubmit() {
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              stroke-width="2"
+              stroke-width="1.8"
               stroke-linecap="round"
               stroke-linejoin="round"
             >
@@ -109,9 +123,11 @@ async function handleSubmit() {
         </div>
       </div>
 
-      <button class="btn-primary" type="submit" :disabled="cargando">
-        {{ cargando ? 'Iniciando…' : 'Iniciar sesión' }}
+      <button class="btn-primary login-submit" type="submit" :disabled="cargando">
+        {{ cargando ? 'Iniciando sesión…' : 'Iniciar sesión' }}
       </button>
+
+      <p class="login-help">¿Problemas con tu cuenta? Contacta al administrador.</p>
     </form>
   </div>
 </template>
@@ -122,65 +138,84 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f5f9;
+  background: var(--c-canvas, #f3f5f8);
+  padding: 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-glow {
+  position: absolute;
+  inset: -30% -20% auto auto;
+  width: 720px;
+  height: 720px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.14) 0%, rgba(37, 99, 235, 0) 65%);
+  pointer-events: none;
 }
 
 .login-card {
-  background: #fff;
-  padding: 2.5rem 2rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  position: relative;
+  background: var(--c-surface, #fff);
+  padding: 2.25rem 2.1rem 1.75rem;
+  border-radius: var(--r-xl, 18px);
+  border: 1px solid var(--c-line, #e6e9ef);
+  box-shadow: var(--sh-lg, 0 12px 28px rgba(15, 23, 42, 0.12));
   width: 100%;
   max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  animation: card-in 0.28s var(--ease, cubic-bezier(0.2, 0.75, 0.2, 1));
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.brand-mark {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(140deg, #3b82f6, #2563eb);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+  flex-shrink: 0;
+}
+
+.brand-mark svg {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 h1 {
-  margin: 0 0 0.25rem;
   font-size: 1.5rem;
-  color: #1e293b;
-  text-align: center;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--c-ink, #0f172a);
+  line-height: 1.15;
 }
 
-.subtitle {
-  margin: 0 0 1.5rem;
-  color: #64748b;
-  font-size: 0.875rem;
-  text-align: center;
-}
-
-.alert {
-  background: #fef2f2;
-  color: #dc2626;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.375rem;
-  margin-bottom: 1rem;
-  font-size: 0.875rem;
-}
-
-.field {
-  margin-bottom: 1rem;
-}
-
-.field label {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.875rem;
-  color: #334155;
-}
-
-.field input {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  box-sizing: border-box;
-}
-
-.field input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+.login-subtitle {
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.82rem;
+  margin-top: 0.2rem;
 }
 
 .password-wrapper {
@@ -188,52 +223,35 @@ h1 {
 }
 
 .password-wrapper input {
-  padding-right: 2.5rem;
+  width: 100%;
+  padding-right: 2.6rem;
+  box-sizing: border-box;
 }
 
 .toggle-password {
   position: absolute;
   top: 50%;
-  right: 0.5rem;
+  right: 0.45rem;
   transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  padding: 0.25rem;
-  color: #64748b;
-  cursor: pointer;
-}
-
-.toggle-password:hover {
-  color: #334155;
+  width: 2.1rem;
+  height: 2.1rem;
 }
 
 .toggle-password svg {
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
-.btn-primary {
+.login-submit {
   width: 100%;
-  padding: 0.625rem;
-  background: #1e293b;
-  color: #fff;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-top: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  margin-top: 0.15rem;
+  font-size: 0.9rem;
 }
 
-.btn-primary:hover {
-  background: #334155;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.login-help {
+  text-align: center;
+  color: var(--c-ink-4, #94a3b8);
+  font-size: 0.78rem;
 }
 </style>
