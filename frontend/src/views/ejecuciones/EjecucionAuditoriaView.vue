@@ -284,14 +284,28 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
 <template>
   <div class="page">
-    <h1>Ejecutar Auditoría</h1>
+    <header class="page-header">
+      <div class="page-header-info">
+        <h1>Ejecutar Auditoría</h1>
+        <p class="subtitle">
+          Selecciona la auditoría y la célula, responde cada criterio y registra los hallazgos.
+        </p>
+      </div>
+    </header>
 
     <div v-if="error" class="msg error">{{ error }}</div>
     <div v-if="exito" class="msg success">{{ exito }}</div>
 
     <!-- Paso 1: Seleccionar auditoría -->
     <div v-if="paso === 'seleccionar'" class="seleccion">
-      <div v-if="auditorias.length === 0" class="msg">No hay auditorías disponibles.</div>
+      <div v-if="auditorias.length === 0" class="state state-empty">
+        <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 3h14v18H5z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
+          <path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+        <h2>No hay auditorías disponibles</h2>
+        <p>Pide al administrador que active una auditoría para comenzar.</p>
+      </div>
       <div v-else class="lista">
         <div
           v-for="auditoria in auditorias"
@@ -311,12 +325,13 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
     <div v-if="paso === 'celulas'" class="seleccion">
       <button class="btn" @click="paso = 'seleccionar'">← Volver</button>
       <h2>{{ auditoriaSeleccionada?.nombre }}</h2>
-      <div v-if="auditoriaSeleccionada?.area_nombre" class="msg">
+      <div v-if="auditoriaSeleccionada?.area_nombre" class="msg msg-info">
         Área: {{ auditoriaSeleccionada.area_nombre }}
       </div>
       <h3>Selecciona la célula</h3>
-      <div v-if="celulas.length === 0" class="msg">
-        No hay células disponibles en esta área.
+      <div v-if="celulas.length === 0" class="state state-empty">
+        <h2>No hay células disponibles</h2>
+        <p>Esta auditoría no tiene células asignadas en su área.</p>
       </div>
       <div v-else class="lista">
         <div
@@ -333,21 +348,26 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
     <!-- Paso 3: Checklist -->
     <div v-if="paso === 'ejecutando' && ejecucion" class="ejecucion">
       <div class="ejecucion-header">
-        <h2>{{ ejecucion.auditoria_nombre }}</h2>
+        <div class="ejecucion-head-row">
+          <h2>{{ ejecucion.auditoria_nombre }}</h2>
+          <span v-if="finalizada" class="estado-final">FINALIZADA</span>
+        </div>
         <div class="ejecucion-meta">
           <span v-if="ejecucion.celula_numero">Célula {{ ejecucion.celula_numero }}</span>
           <span v-if="ejecucion.area_nombre">· {{ ejecucion.area_nombre }}</span>
           <span>· {{ ejecucion.auditor_nombre }}</span>
-          <span v-if="finalizada" class="estado-final">· FINALIZADA</span>
         </div>
         <div class="progreso">
+          <div class="progreso-info">
+            <span class="progreso-label">Progreso</span>
+            <span class="progreso-num" data-num>{{ respondidos }}/{{ total }}</span>
+          </div>
           <div class="progreso-barra">
             <div
               class="progreso-relleno"
-              :style="{ width: total > 0 ? (respondidos / total) * 100 + '%' : '0%' }"
+              :style="{ transform: 'scaleX(' + (total > 0 ? respondidos / total : 0) + ')' }"
             ></div>
           </div>
-          <span>{{ respondidos }}/{{ total }} respondidos</span>
         </div>
       </div>
 
@@ -356,6 +376,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
           v-for="criterio in criterios"
           :key="criterio.id"
           class="criterio"
+          :class="{ 'criterio--respondido': criterio.respuesta_valor !== null }"
         >
           <div class="criterio-num">{{ criterio.orden }}</div>
           <div class="criterio-desc">
@@ -466,12 +487,19 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
     <!-- Paso 4: Terminado -->
     <div v-if="paso === 'terminado' && ejecucion" class="terminado">
+      <span class="terminado-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h16v16H4z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" fill="none"/>
+          <path d="M8 12.2l2.8 2.8L16.5 9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </span>
       <h2>Auditoría finalizada</h2>
+      <p class="terminado-sub">La ejecución quedó registrada en el historial.</p>
       <div class="resumen">
         <p><strong>{{ ejecucion.auditoria_nombre }}</strong></p>
         <p v-if="ejecucion.celula_numero">Célula {{ ejecucion.celula_numero }} · {{ ejecucion.area_nombre }}</p>
         <p>Fecha: {{ new Date(ejecucion.fecha).toLocaleString() }}</p>
-        <p>{{ respondidos }}/{{ total }} criterios respondidos</p>
+        <p class="resumen-total" data-num>{{ respondidos }}/{{ total }} criterios respondidos</p>
       </div>
       <button class="btn primary" @click="router.push({ name: 'dashboard' })">
         Volver al inicio
@@ -481,122 +509,361 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 </template>
 
 <style scoped>
-.page { max-width: 900px; margin: 0 auto; }
-h1 { margin-bottom: 1.5rem; }
+/* --- Selección de auditoría / célula --- */
+.seleccion h2 {
+  margin: 1rem 0 0.25rem;
+  font-size: var(--text-lg, 1.0625rem);
+}
 
-.msg { padding: .75rem 1rem; border-radius: 6px; margin-bottom: 1rem; background: #f0f0f0; }
-.msg.error { background: #fee; color: #c00; border: 1px solid #fcc; }
-.msg.success { background: #efe; color: #060; border: 1px solid #cfc; }
-.msg.small { padding: .4rem .65rem; font-size: .8rem; margin-top: .5rem; }
+.seleccion h3 {
+  margin: 1.4rem 0 0.75rem;
+  font-size: var(--text-md, 0.9375rem);
+  color: var(--c-ink-2, #334155);
+}
 
-.seleccion h2 { margin-bottom: .25rem; }
-.seleccion h3 { margin: 1.5rem 0 .75rem; }
+.lista {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
 
-.lista { display: flex; flex-direction: column; gap: .5rem; }
 .item {
-  padding: 1rem; border: 1px solid #ddd; border-radius: 8px; cursor: pointer;
-  transition: background .15s, border-color .15s;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  cursor: pointer;
+  box-shadow: var(--sh-sm, 0 1px 2px rgba(15, 23, 42, 0.05));
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
-.item:hover { background: #f5f7ff; border-color: #88a; }
-.item-nombre { font-weight: 600; }
-.item-meta { color: #666; font-size: .875rem; margin-top: .25rem; }
 
-.ejecucion-header {
-  background: #f9f9fb; border: 1px solid #e0e0e8; border-radius: 8px;
-  padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+.item:hover {
+  border-color: var(--c-primary, #2563eb);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
 }
-.ejecucion-header h2 { margin: 0 0 .25rem; }
-.ejecucion-meta { color: #666; font-size: .875rem; margin-bottom: .75rem; }
-.estado-final { color: #c00; font-weight: 700; }
-.progreso { display: flex; align-items: center; gap: .75rem; font-size: .875rem; color: #444; }
-.progreso-barra { flex: 1; height: 8px; background: #e0e0e8; border-radius: 4px; overflow: hidden; }
-.progreso-relleno { height: 100%; background: #4c6; border-radius: 4px; transition: width .3s; }
 
-.criterios { display: flex; flex-direction: column; gap: .5rem; margin-bottom: 1.5rem; }
-.criterio {
-  display: flex; align-items: flex-start; gap: .75rem;
-  padding: .75rem 1rem; border: 1px solid #e8e8ec; border-radius: 8px;
-}
-.criterio-num {
-  min-width: 28px; height: 28px; border-radius: 50%;
-  background: #e8e8ec; display: flex; align-items: center; justify-content: center;
-  font-size: .75rem; font-weight: 700; color: #555;
-}
-.criterio-desc { flex: 1; }
-.criterio-desc span { display: block; margin-bottom: .5rem; }
-.criterio-valores { display: flex; gap: .25rem; align-items: center; flex-wrap: wrap; }
-
-.badge-pendiente {
-  font-size: .7rem;
+.item-nombre {
   font-weight: 600;
-  padding: .15rem .55rem;
-  border-radius: 999px;
-  margin-left: .35rem;
+  color: var(--c-ink, #0f172a);
+}
+
+.item-meta {
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.82rem;
+  margin-top: 0.25rem;
+}
+
+/* --- Encabezado de ejecución --- */
+.ejecucion-header {
+  background: var(--c-surface-2, #f8fafc);
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-lg, 14px);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.ejecucion-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ejecucion-header h2 {
+  font-size: var(--text-lg, 1.0625rem);
+}
+
+.estado-final {
+  color: var(--c-danger, #dc2626);
+  font-weight: 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.badge-pendiente.badge-amarillo {
-  background: #fff4d6;
-  color: #8a5a00;
-  border: 1px solid #e0b85a;
-}
-.badge-pendiente.badge-rojo {
-  background: #ffe2e2;
-  color: #a02020;
-  border: 1px solid #d66;
-}
-.criterio-obs { width: 100%; margin-top: .5rem; }
-.criterio-obs .input { width: 100%; }
 
-.criterio-hallazgo {
-  margin-top: .75rem;
-  padding: .75rem;
-  border-radius: 8px;
-  border: 1px solid;
-  background: #fff;
+.ejecucion-meta {
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.84rem;
+  margin-top: 0.3rem;
 }
-.criterio-hallazgo.verde { border-color: #2a2; }
-.criterio-hallazgo.amarillo { border-color: #b80; background: #fffaf0; }
-.criterio-hallazgo.rojo { border-color: #c22; background: #fff5f5; }
-.criterio-hallazgo label { display: block; margin-bottom: .35rem; font-size: .85rem; }
-.hallazgo-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: inherit; }
-.hallazgo-acciones { display: flex; gap: .5rem; margin-top: .5rem; }
 
-.input {
-  padding: .5rem .75rem; border: 1px solid #ccc; border-radius: 6px; font-size: .875rem;
-  outline: none; box-sizing: border-box;
+.progreso {
+  margin-top: 0.9rem;
 }
-.input:focus { border-color: #88a; }
+
+.progreso-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.progreso-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-ink-3, #64748b);
+}
+
+.progreso-num {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--c-ink-2, #334155);
+}
+
+.progreso-barra {
+  height: 8px;
+  background: var(--c-line, #e6e9ef);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progreso-relleno {
+  height: 100%;
+  background: var(--c-primary, #2563eb);
+  border-radius: 999px;
+  transform-origin: left;
+  transition: transform 0.3s var(--ease);
+}
+
+/* --- Checklist --- */
+.criterios {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.criterio {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+.criterio--respondido {
+  border-color: var(--c-line-3, #cbd5e1);
+}
+
+.criterio-num {
+  min-width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 50%;
+  background: var(--c-surface-3, #f1f5f9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--c-ink-3, #64748b);
+  flex-shrink: 0;
+}
+
+.criterio-desc {
+  flex: 1;
+  min-width: 0;
+}
+
+.criterio-desc > span {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--c-ink-2, #334155);
+  line-height: 1.45;
+  margin-bottom: 0.55rem;
+}
+
+.criterio-valores {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
 
 .chip-btn {
-  padding: .25rem .65rem; border: 1px solid #ccc; border-radius: 16px;
-  font-size: .75rem; font-weight: 700; cursor: pointer; background: #fff;
-  transition: all .15s;
+  min-width: 2rem;
+  padding: 0.3rem 0.7rem;
+  border: 1.5px solid var(--c-line-3, #cbd5e1);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: var(--c-surface, #fff);
+  color: var(--c-ink-3, #64748b);
+  transition: border-color 0.12s var(--ease), background 0.12s var(--ease), color 0.12s var(--ease);
+  font-family: inherit;
 }
-.chip-btn:hover { opacity: .85; }
-.chip-btn.activo { transform: scale(1.1); }
-.chip-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-.chip-btn.verde { color: #2a2; border-color: #2a2; }
-.chip-btn.verde.activo { background: #2a2; color: #fff; }
-
-.chip-btn.amarillo { color: #b80; border-color: #b80; }
-.chip-btn.amarillo.activo { background: #b80; color: #fff; }
-
-.chip-btn.rojo { color: #c22; border-color: #c22; }
-.chip-btn.rojo.activo { background: #c22; color: #fff; }
-
-.acciones { display: flex; gap: .75rem; justify-content: flex-end; }
-.btn {
-  padding: .5rem 1.25rem; border: 1px solid #ccc; border-radius: 6px;
-  background: #fff; cursor: pointer; font-size: .875rem;
+.chip-btn:hover {
+  border-color: var(--c-ink-4, #94a3b8);
 }
-.btn.small { padding: .35rem .8rem; font-size: .8rem; }
-.btn.danger { color: #c22; border-color: #c22; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.primary { background: #36c; color: #fff; border-color: #36c; }
-.btn.primary:disabled { background: #88a; border-color: #88a; }
 
-.terminado { text-align: center; }
-.resumen { margin: 1rem 0 1.5rem; }
-.resumen p { margin: .25rem 0; color: #555; }
+.chip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chip-btn.verde {
+  color: var(--c-ok, #16a34a);
+  border-color: var(--c-ok, #16a34a);
+}
+
+.chip-btn.verde.activo {
+  background: var(--c-ok, #16a34a);
+  color: #fff;
+}
+
+.chip-btn.amarillo {
+  color: var(--c-warn, #d97706);
+  border-color: var(--c-warn, #d97706);
+}
+
+.chip-btn.amarillo.activo {
+  background: var(--c-warn, #d97706);
+  color: #fff;
+}
+
+.chip-btn.rojo {
+  color: var(--c-danger, #dc2626);
+  border-color: var(--c-danger, #dc2626);
+}
+
+.chip-btn.rojo.activo {
+  background: var(--c-danger, #dc2626);
+  color: #fff;
+}
+
+.badge-pendiente {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+}
+
+.badge-pendiente.badge-amarillo {
+  background: var(--c-warn-soft, #fef3c7);
+  color: var(--c-warn-ink, #92400e);
+}
+
+.badge-pendiente.badge-rojo {
+  background: var(--c-danger-soft, #fee2e2);
+  color: var(--c-danger-ink, #b91c1c);
+}
+
+.criterio-obs {
+  width: 100%;
+  margin-top: 0.55rem;
+}
+
+.criterio-obs .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.criterio-hallazgo {
+  margin-top: 0.75rem;
+  padding: 0.8rem;
+  border-radius: var(--r-md, 10px);
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface-2, #f8fafc);
+}
+
+.criterio-hallazgo.amarillo {
+  border-color: #fcd34d;
+  background: var(--c-warn-soft, #fef3c7);
+}
+
+.criterio-hallazgo.rojo {
+  border-color: #fca5a5;
+  background: var(--c-danger-soft, #fee2e2);
+}
+
+.criterio-hallazgo label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.criterio-hallazgo label strong {
+  color: var(--c-ink, #0f172a);
+}
+
+.hallazgo-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.hallazgo-acciones {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* --- Acciones finales --- */
+.acciones {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+/* --- Terminado --- */
+.terminado {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.terminado-icon {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  background: var(--c-ok-soft, #dcfce7);
+  color: var(--c-ok, #16a34a);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.terminado-icon svg {
+  width: 1.9rem;
+  height: 1.9rem;
+}
+
+.terminado h2 {
+  font-size: var(--text-xl, 1.375rem);
+}
+
+.terminado-sub {
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.9rem;
+  margin-top: 0.35rem;
+}
+
+.resumen {
+  margin: 1.5rem auto;
+  max-width: 360px;
+  background: var(--c-surface-2, #f8fafc);
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-lg, 14px);
+  padding: 1rem 1.25rem;
+}
+
+.resumen p {
+  margin: 0.25rem 0;
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.9rem;
+}
+
+.resumen-total {
+  font-weight: 700;
+  color: var(--c-ink, #0f172a);
+}
 </style>

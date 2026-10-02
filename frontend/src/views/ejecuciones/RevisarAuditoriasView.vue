@@ -135,7 +135,7 @@ function claseValor(valor: string | null): string {
 <template>
   <div class="page">
     <header class="page-header">
-      <div>
+      <div class="page-header-info">
         <h1>Revisión de auditorías</h1>
         <p class="subtitle">Consulta las auditorías realizadas por los auditores.</p>
       </div>
@@ -183,9 +183,7 @@ function claseValor(valor: string | null): string {
         @change="cargar"
       />
 
-      <button class="btn btn-secondary" @click="limpiarFiltros">
-        Limpiar
-      </button>
+      <button class="btn-secondary" @click="limpiarFiltros">Limpiar</button>
     </div>
 
     <p v-if="error" class="msg msg-err">{{ error }}</p>
@@ -194,68 +192,75 @@ function claseValor(valor: string | null): string {
     <div v-if="cargando" class="msg msg-info">Cargando…</div>
 
     <!-- Vacío -->
-    <div v-else-if="ejecuciones.length === 0" class="msg msg-info">
-      No hay ejecuciones registradas.
+    <div v-else-if="ejecuciones.length === 0" class="state state-empty">
+      <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.2l6.8 2.8V12c0 4.2-2.8 7.2-6.8 8.8C7.8 19.2 5 16.2 5 12V6L12 3.2z" />
+        <path d="M9 12l2.1 2.1 4-4" />
+      </svg>
+      <h2>No hay auditorías para revisar</h2>
+      <p>Las ejecuciones de los auditores aparecerán aquí.</p>
     </div>
 
     <!-- Tabla -->
-    <table v-else class="table">
-      <thead>
-        <tr>
-          <th>Fecha</th>
-          <th>Auditoría</th>
-          <th>Área</th>
-          <th>Célula</th>
-          <th>Auditor</th>
-          <th>Resultado</th>
-          <th>Estado</th>
-          <th class="col-acciones">Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="e in ejecuciones"
-          :key="e.id"
-          class="row"
-          @click="abrirDetalle(e)"
-        >
-          <td class="col-fecha">{{ formatearFecha(e.fecha) }}</td>
-          <td class="col-auditoria">{{ e.auditoria_nombre }}</td>
-          <td>{{ e.area_nombre || '—' }}</td>
-          <td>{{ e.celula_numero ? `Célula ${e.celula_numero}` : '—' }}</td>
-          <td>{{ e.usuario_nombre }}</td>
-          <td>
-            <span class="resultado">
-              <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
-              <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
-              <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
+    <div v-else class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Auditoría</th>
+            <th>Área</th>
+            <th>Célula</th>
+            <th>Auditor</th>
+            <th>Resultado</th>
+            <th>Estado</th>
+            <th class="col-acciones">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="e in ejecuciones"
+            :key="e.id"
+            class="row"
+            @click="abrirDetalle(e)"
+          >
+            <td class="col-fecha">{{ formatearFecha(e.fecha) }}</td>
+            <td class="col-auditoria">{{ e.auditoria_nombre }}</td>
+            <td>{{ e.area_nombre || '—' }}</td>
+            <td>{{ e.celula_numero ? `Célula ${e.celula_numero}` : '—' }}</td>
+            <td>{{ e.usuario_nombre }}</td>
+            <td>
+              <span class="resultado">
+                <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
+                <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
+                <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
+                <span
+                  v-if="
+                    !e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r
+                  "
+                  >—</span
+                >
+              </span>
+            </td>
+            <td>
               <span
-                v-if="
-                  !e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r
-                "
-                >—</span
+                class="badge"
+                :class="esFinalizada(e.estado) ? 'badge-finalizada' : 'badge-progreso'"
               >
-            </span>
-          </td>
-          <td>
-            <span
-              class="badge"
-              :class="esFinalizada(e.estado) ? 'badge-finalizada' : 'badge-progreso'"
-            >
-              {{ estadoLabel(e.estado) }}
-            </span>
-          </td>
-          <td class="col-acciones">
-            <button
-              class="btn btn-sm btn-secondary"
-              @click.stop="abrirDetalle(e)"
-            >
-              Ver
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+                {{ estadoLabel(e.estado) }}
+              </span>
+            </td>
+            <td class="col-acciones">
+              <button
+                class="btn btn-sm"
+                @click.stop="abrirDetalle(e)"
+              >
+                Ver
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Modal detalle (solo lectura) -->
     <div
@@ -263,11 +268,13 @@ function claseValor(valor: string | null): string {
       class="modal-backdrop"
       @click.self="cerrarDetalle"
     >
-      <div class="modal" role="dialog" aria-label="Detalle de ejecución">
+      <div class="modal detalle-modal" role="dialog" aria-label="Detalle de ejecución">
         <header class="modal-header">
           <h2>{{ detalle?.auditoria_nombre || 'Detalle de ejecución' }}</h2>
           <button class="modal-close" @click="cerrarDetalle" aria-label="Cerrar">
-            ✕
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
           </button>
         </header>
 
@@ -306,22 +313,22 @@ function claseValor(valor: string | null): string {
 
             <section class="resumen">
               <h3>Resultado</h3>
-              <div class="resumen-chips">
-                <span class="stat">
-                  <span class="stat-num">{{ detalle.resumen.total_criterios }}</span>
-                  <span class="stat-label">criterios</span>
+              <div class="chip-stats">
+                <span class="chip-stat">
+                  <span class="chip-stat-num">{{ detalle.resumen.total_criterios }}</span>
+                  <span class="chip-stat-label">criterios</span>
                 </span>
-                <span class="stat stat-v">
-                  <span class="stat-num">{{ detalle.resumen.total_v }}</span>
-                  <span class="stat-label">V</span>
+                <span class="chip-stat chip-stat-v">
+                  <span class="chip-stat-num">{{ detalle.resumen.total_v }}</span>
+                  <span class="chip-stat-label">V</span>
                 </span>
-                <span class="stat stat-a">
-                  <span class="stat-num">{{ detalle.resumen.total_a }}</span>
-                  <span class="stat-label">A</span>
+                <span class="chip-stat chip-stat-a">
+                  <span class="chip-stat-num">{{ detalle.resumen.total_a }}</span>
+                  <span class="chip-stat-label">A</span>
                 </span>
-                <span class="stat stat-r">
-                  <span class="stat-num">{{ detalle.resumen.total_r }}</span>
-                  <span class="stat-label">R</span>
+                <span class="chip-stat chip-stat-r">
+                  <span class="chip-stat-num">{{ detalle.resumen.total_r }}</span>
+                  <span class="chip-stat-label">R</span>
                 </span>
               </div>
             </section>
@@ -331,11 +338,11 @@ function claseValor(valor: string | null): string {
               <div
                 v-for="c in detalle.criterios"
                 :key="c.id"
-                class="criterio"
+                class="criterio-detalle"
               >
-                <div class="criterio-head">
-                  <span class="criterio-orden">{{ c.orden }}</span>
-                  <span class="criterio-desc">{{ c.descripcion }}</span>
+                <div class="criterio-detalle-head">
+                  <span class="criterio-detalle-orden">{{ c.orden }}</span>
+                  <span class="criterio-detalle-desc">{{ c.descripcion }}</span>
                   <span
                     v-if="c.respuesta_valor"
                     class="chip-valor"
@@ -347,13 +354,13 @@ function claseValor(valor: string | null): string {
                 </div>
                 <div
                   v-if="c.respuesta_observaciones"
-                  class="criterio-obs"
+                  class="criterio-detalle-obs"
                 >
                   Observación: {{ c.respuesta_observaciones }}
                 </div>
                 <div
                   v-if="c.hallazgo_id"
-                  class="criterio-hallazgo"
+                  class="criterio-detalle-hallazgo"
                 >
                   Hallazgo ({{ c.respuesta_valor === 'R' ? 'mayor' : 'menor' }}):
                   {{ c.hallazgo_descripcion }}
@@ -364,7 +371,7 @@ function claseValor(valor: string | null): string {
         </div>
 
         <footer class="modal-footer">
-          <button class="btn btn-secondary" @click="cerrarDetalle">
+          <button class="btn-secondary" @click="cerrarDetalle">
             Cerrar
           </button>
         </footer>
@@ -374,381 +381,152 @@ function claseValor(valor: string | null): string {
 </template>
 
 <style scoped>
-.page {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-
-h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  color: #1e293b;
-}
-
-.subtitle {
-  margin: 0.25rem 0 0;
-  color: #64748b;
-  font-size: 0.875rem;
-}
-
-.filtros {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.filtros select,
-.filtros input {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  font-size: 0.85rem;
-  background: #fff;
-  color: #334155;
-}
-
-.filtros select:focus,
-.filtros input:focus {
-  outline: none;
-  border-color: #3b82f6;
-}
-
-.msg {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.8rem;
-  margin-bottom: 0.75rem;
-}
-
-.msg-err {
-  background: #fef2f2;
-  color: #dc2626;
-}
-
-.msg-info {
-  background: #f8fafc;
-  color: #64748b;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.375rem;
-  overflow: hidden;
-}
-
-th {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #f1f5f9;
-  font-size: 0.85rem;
-  color: #334155;
-  vertical-align: middle;
-}
-
-tr.row {
-  cursor: pointer;
-}
-
-tr.row:hover {
-  background: #f8fafc;
-}
-
-tr:last-child td {
-  border-bottom: none;
-}
-
 .col-fecha {
   white-space: nowrap;
-  color: #64748b;
+  color: var(--c-ink-3, #64748b);
 }
 
 .col-auditoria {
   font-weight: 600;
-  color: #0f172a;
-}
-
-.col-acciones {
-  text-align: right;
-  white-space: nowrap;
+  color: var(--c-ink, #0f172a);
 }
 
 .resultado {
   display: inline-flex;
-  gap: 0.25rem;
+  gap: 0.35rem;
   font-weight: 600;
   font-size: 0.8rem;
-}
-
-.resultado .v {
-  color: #16a34a;
-}
-
-.resultado .a {
-  color: #b45309;
-}
-
-.resultado .r {
-  color: #dc2626;
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.125rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
   white-space: nowrap;
 }
 
-.badge-finalizada {
-  background: #dcfce7;
-  color: #166534;
+.resultado .v {
+  color: var(--c-ok, #16a34a);
 }
 
-.badge-progreso {
-  background: #fef3c7;
-  color: #92400e;
+.resultado .a {
+  color: var(--c-warn, #d97706);
 }
 
-.btn {
-  border: none;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 0.8rem;
+.resultado .r {
+  color: var(--c-danger, #dc2626);
 }
 
-.btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.75rem;
-}
-
-.btn-secondary {
-  background: #e2e8f0;
-  color: #334155;
-  padding: 0.5rem 1rem;
-}
-
-.btn-secondary:hover {
-  background: #cbd5e1;
-}
-
-/* Modal */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.modal {
-  background: #fff;
-  border-radius: 0.75rem;
+.detalle-modal {
   width: min(680px, calc(100% - 2rem));
-  max-height: calc(100vh - 4rem);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 1.05rem;
-  color: #0f172a;
-}
-
-.modal-close {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.3rem;
-}
-
-.modal-close:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-
-.modal-body {
-  padding: 1.25rem;
-  overflow-y: auto;
 }
 
 .detalle-info p {
-  margin: 0.25rem 0;
-  font-size: 0.9rem;
-  color: #334155;
+  margin: 0.3rem 0;
+  font-size: 0.875rem;
+  color: var(--c-ink-2, #334155);
 }
 
-.resumen {
-  margin: 1rem 0;
+.resumen,
+.criterios-detalle {
+  margin-top: 1.25rem;
 }
 
 .resumen h3,
 .criterios-detalle h3 {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #64748b;
-  margin: 0 0 0.5rem;
+  letter-spacing: 0.05em;
+  color: var(--c-ink-3, #64748b);
+  margin: 0 0 0.55rem;
 }
 
-.resumen-chips {
+.chip-stats {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.stat {
+.chip-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #f1f5f9;
-  border-radius: 0.5rem;
-  padding: 0.5rem 1rem;
   min-width: 4rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface-3, #f1f5f9);
 }
 
-.stat-num {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #0f172a;
+.chip-stat-num {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--c-ink, #0f172a);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
 }
 
-.stat-label {
+.chip-stat-label {
   font-size: 0.7rem;
-  color: #64748b;
+  color: var(--c-ink-3, #64748b);
 }
 
-.stat-v .stat-num {
-  color: #16a34a;
+.chip-stat-v .chip-stat-num {
+  color: var(--c-ok, #16a34a);
 }
 
-.stat-a .stat-num {
-  color: #b45309;
+.chip-stat-a .chip-stat-num {
+  color: var(--c-warn, #d97706);
 }
 
-.stat-r .stat-num {
-  color: #dc2626;
+.chip-stat-r .chip-stat-num {
+  color: var(--c-danger, #dc2626);
 }
 
-.criterios-detalle {
-  margin-top: 1rem;
-}
-
-.criterio {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid #e8e8ec;
-  border-radius: 0.5rem;
+.criterio-detalle {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-md, 10px);
   margin-bottom: 0.5rem;
 }
 
-.criterio-head {
+.criterio-detalle-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
 }
 
-.criterio-orden {
+.criterio-detalle-orden {
   min-width: 1.6rem;
   height: 1.6rem;
   border-radius: 50%;
-  background: #e8e8ec;
+  background: var(--c-surface-3, #f1f5f9);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #555;
+  color: var(--c-ink-3, #64748b);
+  flex-shrink: 0;
 }
 
-.criterio-desc {
+.criterio-detalle-desc {
   flex: 1;
-  font-size: 0.9rem;
-  color: #334155;
+  font-size: 0.875rem;
+  color: var(--c-ink-2, #334155);
 }
 
 .chip-valor {
-  padding: 0.125rem 0.6rem;
+  padding: 0.15rem 0.6rem;
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
-.chip-v {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.chip-a {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.chip-r {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-
-.chip-sin {
-  background: #f1f5f9;
-  color: #94a3b8;
-}
-
-.criterio-obs {
-  margin-top: 0.4rem;
+.criterio-detalle-obs {
+  margin-top: 0.45rem;
   font-size: 0.82rem;
-  color: #b45309;
+  color: var(--c-warn, #d97706);
 }
 
-.criterio-hallazgo {
-  margin-top: 0.4rem;
+.criterio-detalle-hallazgo {
+  margin-top: 0.45rem;
   font-size: 0.82rem;
-  color: #b91c1c;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0.85rem 1.25rem;
-  border-top: 1px solid #e2e8f0;
-  background: #f8fafc;
-  border-radius: 0 0 0.75rem 0.75rem;
+  color: var(--c-danger, #dc2626);
 }
 </style>

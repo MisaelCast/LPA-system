@@ -649,34 +649,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped>
-.auditorias-page {
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
 /* --- Header --- */
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-  flex-wrap: wrap;
-}
-
-.page-header-info h1 {
-  margin: 0;
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: #0f172a;
-  letter-spacing: -0.01em;
-}
-
-.subtitle {
-  margin: 0.25rem 0 0;
-  color: #64748b;
-  font-size: 0.95rem;
-}
 
 /* --- Stats --- */
 .stats {
@@ -701,7 +674,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94a3b8;
+  color: #64748b;
   font-weight: 600;
 }
 
@@ -932,7 +905,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 .meta-text {
   font-size: 0.78rem;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .auditoria-card-body {
@@ -1363,7 +1336,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .toast-ok {
-  border-left: 3px solid #16a34a;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
 }
 
 .toast-ok .toast-icon {
@@ -1371,7 +1345,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .toast-err {
-  border-left: 3px solid #dc2626;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 
 .toast-err .toast-icon {
@@ -1385,9 +1360,4 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 /* --- Responsive --- */
-@media (max-width: 640px) {
-  .page-header-info h1 {
-    font-size: 1.35rem;
-  }
-}
 </style>
