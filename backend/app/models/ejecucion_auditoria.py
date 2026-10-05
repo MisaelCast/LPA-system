@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
@@ -16,7 +16,7 @@ class EjecucionAuditoria(SQLModel, table=True):
     __tablename__ = "ejecucion_auditoria"
 
     id: int | None = Field(default=None, primary_key=True)
-    fecha: datetime = Field(default_factory=datetime.utcnow)
+    fecha: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     observaciones: str | None = Field(default=None, max_length=1000)
     estado: str = Field(default="en_proceso", max_length=20)
     auditoria_id: int = Field(foreign_key="auditoria.id")

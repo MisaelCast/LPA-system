@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
@@ -11,7 +11,7 @@ from app.schemas.usuario import UsuarioRead
 class EjecucionAuditoriaBase(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
-    fecha: datetime = Field(default_factory=datetime.utcnow)
+    fecha: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     observaciones: str | None = Field(default=None, max_length=1000)
     estado: str = Field(default="en_proceso", max_length=20)
 

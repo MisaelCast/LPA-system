@@ -1,6 +1,6 @@
 """Logica de negocio para EjecucionAuditoria y Respuesta."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Session, func, select
 
@@ -189,7 +189,7 @@ class EjecucionAuditoriaService:
                 )
 
         ejecucion = EjecucionAuditoria(
-            fecha=datetime.utcnow(),
+            fecha=datetime.now(timezone.utc),
             estado="en_proceso",
             auditoria_id=auditoria.id,
             usuario_id=usuario.id,

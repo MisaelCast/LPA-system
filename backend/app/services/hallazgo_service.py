@@ -1,6 +1,6 @@
 """Logica de negocio para la entidad Hallazgo."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
@@ -133,7 +133,7 @@ class HallazgoService:
 
         hallazgo = Hallazgo(
             descripcion=datos.descripcion,
-            fecha_creacion=datetime.utcnow(),
+            fecha_creacion=datetime.now(timezone.utc),
             respuesta_id=respuesta.id,
         )
         guardado = self._repo.crear(hallazgo)

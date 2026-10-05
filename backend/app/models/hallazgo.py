@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlmodel import Field, Relationship, SQLModel
@@ -18,7 +18,7 @@ class Hallazgo(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     descripcion: str = Field(max_length=1000)
-    fecha_creacion: datetime = Field(default_factory=datetime.utcnow)
+    fecha_creacion: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     respuesta_id: int = Field(foreign_key="respuesta.id", unique=True)
 
     respuesta: "Respuesta" = Relationship(back_populates="hallazgo")
