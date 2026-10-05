@@ -227,4 +227,81 @@ describe('EjecucionAuditoriaView - hallazgos flow', () => {
 
     expect(wrapper.find('.badge-pendiente').exists()).toBe(false)
   })
+
+  it('agrupa criterios bajo encabezados jerárquicos sin repetirlos en la descripción', async () => {
+    const router = makeRouter()
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(EjecucionAuditoriaView, {
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    wrapper.vm.ejecucion = {
+      ...baseEjecucion(),
+      criterios: [
+        {
+          id: 1,
+          descripcion: 'Criterio uno',
+          orden: 1,
+          seccion: '1. LIJADO CARA FRONTAL',
+          subseccion: '1.1 P1000',
+          subtitulo: 'Cara',
+          respuesta_valor: null,
+          respuesta_observaciones: null,
+          respuesta_id: null,
+          hallazgo_id: null,
+          hallazgo_descripcion: null,
+        },
+        {
+          id: 2,
+          descripcion: 'Criterio dos',
+          orden: 2,
+          seccion: '1. LIJADO CARA FRONTAL',
+          subseccion: '1.1 P1000',
+          subtitulo: 'Cara',
+          respuesta_valor: null,
+          respuesta_observaciones: null,
+          respuesta_id: null,
+          hallazgo_id: null,
+          hallazgo_descripcion: null,
+        },
+        {
+          id: 3,
+          descripcion: 'Criterio tres',
+          orden: 3,
+          seccion: '3. MECANISMO',
+          subseccion: null,
+          subtitulo: null,
+          respuesta_valor: null,
+          respuesta_observaciones: null,
+          respuesta_id: null,
+          hallazgo_id: null,
+          hallazgo_descripcion: null,
+        },
+      ],
+    }
+    wrapper.vm.paso = 'ejecutando'
+    await flushPromises()
+
+    const secciones = wrapper.findAll('.criterio-head--seccion')
+    expect(secciones.length).toBe(2)
+    expect(secciones[0].text()).toBe('1. LIJADO CARA FRONTAL')
+    expect(secciones[1].text()).toBe('3. MECANISMO')
+
+    const subsecciones = wrapper.findAll('.criterio-head--subseccion')
+    expect(subsecciones.length).toBe(1)
+    expect(subsecciones[0].text()).toBe('1.1 P1000')
+
+    const subtitulos = wrapper.findAll('.criterio-head--subtitulo')
+    expect(subtitulos.length).toBe(1)
+    expect(subtitulos[0].text()).toBe('Cara')
+
+    const descripciones = wrapper.findAll('.criterio-desc > span')
+    expect(descripciones.length).toBe(3)
+    expect(descripciones[0].text()).toBe('Criterio uno')
+    expect(descripciones[0].text()).not.toContain('LIJADO CARA FRONTAL')
+    expect(descripciones[2].text()).not.toContain('MECANISMO')
+  })
 })

@@ -5,6 +5,7 @@ import type { Usuario } from '@/types/auth'
 import type {
   EjecucionAuditoriaListItem,
   EjecucionAuditoriaDetalle,
+  CriterioRespuesta,
 } from '@/types/ejecucion'
 import {
   listarEjecuciones,
@@ -130,6 +131,37 @@ function claseValor(valor: string | null): string {
   if (valor === 'R') return 'chip-r'
   return 'chip-sin'
 }
+
+type FilaDetalle =
+  | { tipo: 'header'; nivel: 'seccion' | 'subseccion' | 'subtitulo'; texto: string }
+  | { tipo: 'criterio'; criterio: CriterioRespuesta }
+
+const filasDetalle = computed<FilaDetalle[]>(() => {
+  const resultado: FilaDetalle[] = []
+  const criterios = detalle.value?.criterios || []
+  let seccion = ''
+  let subseccion = ''
+  let subtitulo = ''
+  for (const c of criterios) {
+    if (c.seccion && c.seccion !== seccion) {
+      seccion = c.seccion
+      subseccion = ''
+      subtitulo = ''
+      resultado.push({ tipo: 'header', nivel: 'seccion', texto: seccion })
+    }
+    if (c.subseccion && c.subseccion !== subseccion) {
+      subseccion = c.subseccion
+      subtitulo = ''
+      resultado.push({ tipo: 'header', nivel: 'subseccion', texto: subseccion })
+    }
+    if (c.subtitulo && c.subtitulo !== subtitulo) {
+      subtitulo = c.subtitulo
+      resultado.push({ tipo: 'header', nivel: 'subtitulo', texto: subtitulo })
+    }
+    resultado.push({ tipo: 'criterio', criterio: c })
+  }
+  return resultado
+})
 </script>
 
 <template>
@@ -335,37 +367,45 @@ function claseValor(valor: string | null): string {
 
             <section class="criterios-detalle">
               <h3>Criterios</h3>
-              <div
-                v-for="c in detalle.criterios"
-                :key="c.id"
-                class="criterio-detalle"
+              <template
+                v-for="fila in filasDetalle"
+                :key="fila.tipo === 'criterio' ? 'c-' + fila.criterio.id : 'h-' + fila.nivel + '-' + fila.texto"
               >
-                <div class="criterio-detalle-head">
-                  <span class="criterio-detalle-orden">{{ c.orden }}</span>
-                  <span class="criterio-detalle-desc">{{ c.descripcion }}</span>
-                  <span
-                    v-if="c.respuesta_valor"
-                    class="chip-valor"
-                    :class="claseValor(c.respuesta_valor)"
+                <div
+                  v-if="fila.tipo === 'header'"
+                  class="criterio-detalle-head-sep"
+                  :class="'criterio-detalle-head-sep--' + fila.nivel"
+                >
+                  {{ fila.texto }}
+                </div>
+                <div v-else class="criterio-detalle">
+                  <div class="criterio-detalle-head">
+                    <span class="criterio-detalle-orden">{{ fila.criterio.orden }}</span>
+                    <span class="criterio-detalle-desc">{{ fila.criterio.descripcion }}</span>
+                    <span
+                      v-if="fila.criterio.respuesta_valor"
+                      class="chip-valor"
+                      :class="claseValor(fila.criterio.respuesta_valor)"
+                    >
+                      {{ fila.criterio.respuesta_valor }}
+                    </span>
+                    <span v-else class="chip-valor chip-sin">—</span>
+                  </div>
+                  <div
+                    v-if="fila.criterio.respuesta_observaciones"
+                    class="criterio-detalle-obs"
                   >
-                    {{ c.respuesta_valor }}
-                  </span>
-                  <span v-else class="chip-valor chip-sin">—</span>
+                    Observación: {{ fila.criterio.respuesta_observaciones }}
+                  </div>
+                  <div
+                    v-if="fila.criterio.hallazgo_id"
+                    class="criterio-detalle-hallazgo"
+                  >
+                    Hallazgo ({{ fila.criterio.respuesta_valor === 'R' ? 'mayor' : 'menor' }}):
+                    {{ fila.criterio.hallazgo_descripcion }}
+                  </div>
                 </div>
-                <div
-                  v-if="c.respuesta_observaciones"
-                  class="criterio-detalle-obs"
-                >
-                  Observación: {{ c.respuesta_observaciones }}
-                </div>
-                <div
-                  v-if="c.hallazgo_id"
-                  class="criterio-detalle-hallazgo"
-                >
-                  Hallazgo ({{ c.respuesta_valor === 'R' ? 'mayor' : 'menor' }}):
-                  {{ c.hallazgo_descripcion }}
-                </div>
-              </div>
+              </template>
             </section>
           </template>
         </div>
@@ -482,6 +522,41 @@ function claseValor(valor: string | null): string {
   border: 1px solid var(--c-line, #e6e9ef);
   border-radius: var(--r-md, 10px);
   margin-bottom: 0.5rem;
+}
+
+.criterio-detalle-head-sep {
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--c-ink, #0f172a);
+  margin-bottom: 0.35rem;
+}
+
+.criterio-detalle-head-sep--seccion {
+  margin-top: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface-3, #f1f5f9);
+  font-size: 0.9rem;
+}
+
+.criterio-detalle-head-sep--seccion:first-child {
+  margin-top: 0;
+}
+
+.criterio-detalle-head-sep--subseccion {
+  margin-top: 0.75rem;
+  padding-left: 0.75rem;
+  font-size: 0.82rem;
+  color: var(--c-ink-2, #334155);
+}
+
+.criterio-detalle-head-sep--subtitulo {
+  margin-top: 0.6rem;
+  padding-left: 0.75rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--c-ink-3, #64748b);
 }
 
 .criterio-detalle-head {

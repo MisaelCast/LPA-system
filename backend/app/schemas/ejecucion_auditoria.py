@@ -37,6 +37,9 @@ class CriterioRespuesta(SQLModel):
     id: int
     descripcion: str
     orden: int
+    seccion: str | None = None
+    subseccion: str | None = None
+    subtitulo: str | None = None
     respuesta_valor: str | None = None
     respuesta_observaciones: str | None = None
     respuesta_id: int | None = None

@@ -42,6 +42,40 @@ const respondidos = computed(() =>
 const total = computed(() => criterios.value.length)
 const finalizada = computed(() => ejecucion.value?.estado === 'finalizada')
 
+type FilaHeader = {
+  tipo: 'header'
+  nivel: 'seccion' | 'subseccion' | 'subtitulo'
+  texto: string
+}
+type FilaCriterio = { tipo: 'criterio'; criterio: CriterioRespuesta }
+type Fila = FilaHeader | FilaCriterio
+
+const filas = computed<Fila[]>(() => {
+  const resultado: Fila[] = []
+  let seccion = ''
+  let subseccion = ''
+  let subtitulo = ''
+  for (const c of criterios.value) {
+    if (c.seccion && c.seccion !== seccion) {
+      seccion = c.seccion
+      subseccion = ''
+      subtitulo = ''
+      resultado.push({ tipo: 'header', nivel: 'seccion', texto: seccion })
+    }
+    if (c.subseccion && c.subseccion !== subseccion) {
+      subseccion = c.subseccion
+      subtitulo = ''
+      resultado.push({ tipo: 'header', nivel: 'subseccion', texto: subseccion })
+    }
+    if (c.subtitulo && c.subtitulo !== subtitulo) {
+      subtitulo = c.subtitulo
+      resultado.push({ tipo: 'header', nivel: 'subtitulo', texto: subtitulo })
+    }
+    resultado.push({ tipo: 'criterio', criterio: c })
+  }
+  return resultado
+})
+
 async function mostrarError(prefix: string, err: unknown) {
   const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(err)
   error.value = `${prefix}: ${msg}`
@@ -372,103 +406,114 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
       </div>
 
       <div class="criterios">
-        <div
-          v-for="criterio in criterios"
-          :key="criterio.id"
-          class="criterio"
-          :class="{ 'criterio--respondido': criterio.respuesta_valor !== null }"
+        <template
+          v-for="fila in filas"
+          :key="fila.tipo === 'criterio' ? 'c-' + fila.criterio.id : 'h-' + fila.nivel + '-' + fila.texto"
         >
-          <div class="criterio-num">{{ criterio.orden }}</div>
-          <div class="criterio-desc">
-            <span>{{ criterio.descripcion }}</span>
-            <div class="criterio-valores">
-              <button
-                class="chip-btn verde"
-                :class="{ activo: criterio.respuesta_valor === 'V' }"
-                :disabled="finalizada"
-                @click="seleccionarValor(criterio, 'V')"
-              >V</button>
-              <button
-                class="chip-btn amarillo"
-                :class="{ activo: criterio.respuesta_valor === 'A' }"
-                :disabled="finalizada"
-                @click="seleccionarValor(criterio, 'A')"
-              >A</button>
-              <button
-                class="chip-btn rojo"
-                :class="{ activo: criterio.respuesta_valor === 'R' }"
-                :disabled="finalizada"
-                @click="seleccionarValor(criterio, 'R')"
-              >R</button>
-              <span
-                v-if="mostrarBadgeHallazgoPendiente(criterio)"
-                class="badge-pendiente"
-                :class="criterio.respuesta_valor === 'A' ? 'badge-amarillo' : 'badge-rojo'"
-                title="Aún no has guardado el hallazgo para esta respuesta."
-              >Hallazgo pendiente</span>
-            </div>
-            <div
-              v-if="mostrarCampoHallazgo(criterio)"
-              class="criterio-hallazgo"
-              :class="claseChip(criterio, criterio.respuesta_valor!)"
-            >
-              <label>
-                <strong>
-                  {{
-                    criterio.respuesta_valor === 'A'
-                      ? 'Hallazgo menor (corregido y retroalimentado)'
-                      : 'Hallazgo mayor / grave'
-                  }}
-                </strong>
-              </label>
-              <textarea
-                v-model="hallazgosInputs[criterio.id]"
-                class="input hallazgo-input"
-                rows="3"
-                placeholder="Describe el hallazgo detectado..."
-                :disabled="finalizada"
-              ></textarea>
-              <div class="hallazgo-acciones">
-                <button
-                  class="btn small"
-                  :disabled="finalizada || hallazgosGuardando[criterio.id]"
-                  @click="guardarHallazgo(criterio)"
-                >
-                  {{
-                    criterio.hallazgo_id
-                      ? 'Actualizar hallazgo'
-                      : 'Registrar hallazgo'
-                  }}
-                </button>
-                <button
-                  v-if="criterio.hallazgo_id && !finalizada"
-                  class="btn small danger"
-                  @click="quitarHallazgo(criterio)"
-                >
-                  Quitar hallazgo
-                </button>
-              </div>
-              <div v-if="hallazgosError[criterio.id]" class="msg error small">
-                {{ hallazgosError[criterio.id] }}
-              </div>
-              <div v-else-if="criterio.hallazgo_id" class="msg success small">
-                Hallazgo #{{ criterio.hallazgo_id }} registrado.
-              </div>
-            </div>
+          <div
+            v-if="fila.tipo === 'header'"
+            class="criterio-head"
+            :class="'criterio-head--' + fila.nivel"
+          >
+            {{ fila.texto }}
           </div>
           <div
-            v-if="criterio.respuesta_valor && criterio.respuesta_valor !== 'V' && !mostrarCampoHallazgo(criterio)"
-            class="criterio-obs"
+            v-else
+            class="criterio"
+            :class="{ 'criterio--respondido': fila.criterio.respuesta_valor !== null }"
           >
-            <input
-              v-model="criterio.respuesta_observaciones"
-              class="input"
-              placeholder="Observaciones..."
-              type="text"
-              :disabled="finalizada"
-            />
+            <div class="criterio-num">{{ fila.criterio.orden }}</div>
+            <div class="criterio-desc">
+              <span>{{ fila.criterio.descripcion }}</span>
+              <div class="criterio-valores">
+                <button
+                  class="chip-btn verde"
+                  :class="{ activo: fila.criterio.respuesta_valor === 'V' }"
+                  :disabled="finalizada"
+                  @click="seleccionarValor(fila.criterio, 'V')"
+                >V</button>
+                <button
+                  class="chip-btn amarillo"
+                  :class="{ activo: fila.criterio.respuesta_valor === 'A' }"
+                  :disabled="finalizada"
+                  @click="seleccionarValor(fila.criterio, 'A')"
+                >A</button>
+                <button
+                  class="chip-btn rojo"
+                  :class="{ activo: fila.criterio.respuesta_valor === 'R' }"
+                  :disabled="finalizada"
+                  @click="seleccionarValor(fila.criterio, 'R')"
+                >R</button>
+                <span
+                  v-if="mostrarBadgeHallazgoPendiente(fila.criterio)"
+                  class="badge-pendiente"
+                  :class="fila.criterio.respuesta_valor === 'A' ? 'badge-amarillo' : 'badge-rojo'"
+                  title="Aún no has guardado el hallazgo para esta respuesta."
+                >Hallazgo pendiente</span>
+              </div>
+              <div
+                v-if="mostrarCampoHallazgo(fila.criterio)"
+                class="criterio-hallazgo"
+                :class="claseChip(fila.criterio, fila.criterio.respuesta_valor!)"
+              >
+                <label>
+                  <strong>
+                    {{
+                      fila.criterio.respuesta_valor === 'A'
+                        ? 'Hallazgo menor (corregido y retroalimentado)'
+                        : 'Hallazgo mayor / grave'
+                    }}
+                  </strong>
+                </label>
+                <textarea
+                  v-model="hallazgosInputs[fila.criterio.id]"
+                  class="input hallazgo-input"
+                  rows="3"
+                  placeholder="Describe el hallazgo detectado..."
+                  :disabled="finalizada"
+                ></textarea>
+                <div class="hallazgo-acciones">
+                  <button
+                    class="btn small"
+                    :disabled="finalizada || hallazgosGuardando[fila.criterio.id]"
+                    @click="guardarHallazgo(fila.criterio)"
+                  >
+                    {{
+                      fila.criterio.hallazgo_id
+                        ? 'Actualizar hallazgo'
+                        : 'Registrar hallazgo'
+                    }}
+                  </button>
+                  <button
+                    v-if="fila.criterio.hallazgo_id && !finalizada"
+                    class="btn small danger"
+                    @click="quitarHallazgo(fila.criterio)"
+                  >
+                    Quitar hallazgo
+                  </button>
+                </div>
+                <div v-if="hallazgosError[fila.criterio.id]" class="msg error small">
+                  {{ hallazgosError[fila.criterio.id] }}
+                </div>
+                <div v-else-if="fila.criterio.hallazgo_id" class="msg success small">
+                  Hallazgo #{{ fila.criterio.hallazgo_id }} registrado.
+                </div>
+              </div>
+            </div>
+            <div
+              v-if="fila.criterio.respuesta_valor && fila.criterio.respuesta_valor !== 'V' && !mostrarCampoHallazgo(fila.criterio)"
+              class="criterio-obs"
+            >
+              <input
+                v-model="fila.criterio.respuesta_observaciones"
+                class="input"
+                placeholder="Observaciones..."
+                type="text"
+                :disabled="finalizada"
+              />
+            </div>
           </div>
-        </div>
+        </template>
       </div>
 
       <div class="acciones">
@@ -633,6 +678,41 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   flex-direction: column;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
+}
+
+.criterio-head {
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--c-ink, #0f172a);
+}
+
+.criterio-head--seccion {
+  margin-top: 1.25rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface-3, #f1f5f9);
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+}
+
+.criterio-head--seccion:first-child {
+  margin-top: 0;
+}
+
+.criterio-head--subseccion {
+  margin-top: 0.9rem;
+  padding-left: 0.9rem;
+  font-size: 0.86rem;
+  color: var(--c-ink-2, #334155);
+}
+
+.criterio-head--subtitulo {
+  margin-top: 0.7rem;
+  padding-left: 0.9rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--c-ink-3, #64748b);
 }
 
 .criterio {

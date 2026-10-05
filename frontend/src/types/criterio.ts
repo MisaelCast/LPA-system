@@ -4,6 +4,9 @@ export interface Criterio {
   orden: number
   activo: boolean
   auditoria_id: number
+  seccion?: string | null
+  subseccion?: string | null
+  subtitulo?: string | null
 }
 
 export interface CriterioCreate {

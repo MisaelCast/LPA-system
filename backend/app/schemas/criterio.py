@@ -29,6 +29,9 @@ class CriterioUpdate(SQLModel):
 class CriterioRead(CriterioBase):
     id: int
     auditoria_id: int
+    seccion: str | None = None
+    subseccion: str | None = None
+    subtitulo: str | None = None
 
 
 class CriterioEstadoUpdate(SQLModel):

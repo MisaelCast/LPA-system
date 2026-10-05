@@ -95,6 +95,9 @@ class EjecucionAuditoriaService:
                 "id": criterio.id,
                 "descripcion": criterio.descripcion,
                 "orden": criterio.orden,
+                "seccion": criterio.seccion,
+                "subseccion": criterio.subseccion,
+                "subtitulo": criterio.subtitulo,
                 "respuesta_valor": respuesta.valor if respuesta else None,
                 "respuesta_observaciones": (
                     respuesta.observaciones if respuesta else None

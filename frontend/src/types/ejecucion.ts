@@ -5,6 +5,9 @@ export interface CriterioRespuesta {
   id: number
   descripcion: string
   orden: number
+  seccion?: string | null
+  subseccion?: string | null
+  subtitulo?: string | null
   respuesta_valor: string | null
   respuesta_observaciones: string | null
   respuesta_id: number | null
