@@ -1,6 +1,9 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,10 +24,23 @@ from app.seed import seed_inicial
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # El esquema se administra mediante migraciones de Alembic
-    # (``alembic upgrade head``). Aquí solo se siembran datos iniciales.
+    # Aplica las migraciones pendientes antes de sembrar datos, para que el
+    # seed nunca corra contra un esquema desactualizado.
+    _aplicar_migraciones()
     seed_inicial()
     yield
+
+
+def _aplicar_migraciones() -> None:
+    """Ejecuta ``alembic upgrade head`` sobre la base de datos configurada.
+
+    La ruta del ``alembic.ini`` y del directorio de migraciones se resuelve de
+    forma absoluta para que funcione sin importar el directorio de trabajo.
+    """
+    backend_dir = Path(__file__).resolve().parent.parent
+    config = Config(str(backend_dir / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_dir / "migrations"))
+    command.upgrade(config, "head")
 
 
 app = FastAPI(
