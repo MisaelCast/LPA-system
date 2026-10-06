@@ -1,12 +1,18 @@
 """Endpoints para la gestion de hallazgos."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from app.auth.dependencies import get_current_active_user
 from app.db.database import get_session
 from app.models.usuario import Usuario
-from app.schemas.hallazgo import HallazgoBase, HallazgoCreate, HallazgoDetallado, HallazgoUpdate
+from app.schemas.hallazgo import (
+    HallazgoCreate,
+    HallazgoCreateRequest,
+    HallazgoDetallado,
+    HallazgoSeguimientoUpdate,
+    HallazgoUpdate,
+)
 from app.services.hallazgo_service import HallazgoService
 
 router = APIRouter(tags=["hallazgos"])
@@ -19,7 +25,18 @@ def _a_http_error(error: ValueError) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(error),
         )
-    if "ya existe" in mensaje or "ya finalized" in mensaje or "valor" in mensaje:
+    if "permiso" in mensaje:
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        )
+    if (
+        "ya existe" in mensaje
+        or "finalizada" in mensaje
+        or "valor" in mensaje
+        or "estado invalido" in mensaje
+        or "inactiva" in mensaje
+    ):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(error),
@@ -30,6 +47,32 @@ def _a_http_error(error: ValueError) -> HTTPException:
     )
 
 
+@router.get(
+    "/hallazgos",
+    response_model=list[HallazgoDetallado],
+)
+def listar_hallazgos(
+    estado: str | None = Query(default=None),
+    area_responsable_id: int | None = Query(default=None),
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Lista hallazgos con filtros opcionales.
+
+    Un Auditor solo ve los hallazgos de sus propias ejecuciones;
+    Supervisor/Gerente/Administrador ven todos.
+    """
+    service = HallazgoService(session)
+    try:
+        return service.listar(
+            usuario,
+            estado=estado,
+            area_responsable_id=area_responsable_id,
+        )
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
 @router.post(
     "/respuestas/{respuesta_id}/hallazgo",
     response_model=HallazgoDetallado,
@@ -37,17 +80,19 @@ def _a_http_error(error: ValueError) -> HTTPException:
 )
 def crear_hallazgo(
     respuesta_id: int,
-    datos: HallazgoBase,
+    datos: HallazgoCreateRequest,
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
     """Crea un hallazgo asociado a una respuesta con valor ``A`` o ``R``.
 
-    El ``respuesta_id`` proviene del path; el body solo requiere ``descripcion``.
+    El ``respuesta_id`` proviene del path; el body requiere ``descripcion``
+    y ``area_responsable_id``.
     """
     payload = HallazgoCreate(
         descripcion=datos.descripcion,
         respuesta_id=respuesta_id,
+        area_responsable_id=datos.area_responsable_id,
     )
     service = HallazgoService(session)
     try:
@@ -69,6 +114,27 @@ def obtener_hallazgo(
     service = HallazgoService(session)
     try:
         return service.obtener_por_id(hallazgo_id)
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.patch(
+    "/hallazgos/{hallazgo_id}/seguimiento",
+    response_model=HallazgoDetallado,
+)
+def actualizar_seguimiento_hallazgo(
+    hallazgo_id: int,
+    datos: HallazgoSeguimientoUpdate,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Actualiza estado, accion correctiva y area responsable del hallazgo.
+
+    Permitido al auditor dueño del hallazgo y a Supervisor/Gerente/Administrador.
+    """
+    service = HallazgoService(session)
+    try:
+        return service.actualizar_seguimiento(hallazgo_id, datos, usuario)
     except ValueError as error:
         raise _a_http_error(error)
 

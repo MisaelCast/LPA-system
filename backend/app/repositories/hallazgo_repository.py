@@ -2,7 +2,9 @@
 
 from sqlmodel import Session, select
 
+from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import Hallazgo
+from app.models.respuesta import Respuesta
 
 
 class HallazgoRepository:
@@ -21,10 +23,38 @@ class HallazgoRepository:
             select(Hallazgo).where(Hallazgo.respuesta_id == respuesta_id)
         ).first()
 
+    def listar(
+        self,
+        estado: str | None = None,
+        area_responsable_id: int | None = None,
+        solo_usuario_id: int | None = None,
+    ) -> list[Hallazgo]:
+        """Lista hallazgos con filtros opcionales.
+
+        ``solo_usuario_id`` limita a los hallazgos cuya ejecución pertenece a
+        ese usuario (visibilidad del rol Auditor).
+        """
+        stmt = select(Hallazgo)
+        if estado:
+            stmt = stmt.where(Hallazgo.estado == estado)
+        if area_responsable_id:
+            stmt = stmt.where(
+                Hallazgo.area_responsable_id == area_responsable_id
+            )
+        if solo_usuario_id is not None:
+            stmt = (
+                stmt.join(Respuesta, Respuesta.id == Hallazgo.respuesta_id)
+                .join(
+                    EjecucionAuditoria,
+                    EjecucionAuditoria.id == Respuesta.ejecucion_auditoria_id,
+                )
+                .where(EjecucionAuditoria.usuario_id == solo_usuario_id)
+            )
+        stmt = stmt.order_by(Hallazgo.fecha_creacion.desc())
+        return list(self._session.exec(stmt).all())
+
     def listar_por_ejecucion(self, ejecucion_id: int) -> list[Hallazgo]:
         """Lista los hallazgos cuyas respuestas pertenecen a una ejecucion."""
-        from app.models.respuesta import Respuesta
-
         return list(
             self._session.exec(
                 select(Hallazgo)

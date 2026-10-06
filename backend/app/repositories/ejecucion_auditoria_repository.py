@@ -6,6 +6,8 @@ from sqlmodel import Session, select
 
 from app.models.auditoria import Auditoria
 from app.models.ejecucion_auditoria import EjecucionAuditoria
+from app.models.rol import Rol
+from app.models.usuario import Usuario
 
 
 class EjecucionAuditoriaRepository:
@@ -37,6 +39,8 @@ class EjecucionAuditoriaRepository:
         fecha_desde: datetime | None = None,
         fecha_hasta: datetime | None = None,
         area_id: int | None = None,
+        tipo_respuesta: str | None = None,
+        solo_auditores: bool = False,
     ) -> list[EjecucionAuditoria]:
         """Lista ejecuciones con filtros opcionales, ordenadas por fecha DESC."""
         statement = select(EjecucionAuditoria)
@@ -45,11 +49,24 @@ class EjecucionAuditoriaRepository:
             statement = statement.where(
                 EjecucionAuditoria.auditoria_id == auditoria_id
             )
-        if area_id is not None:
+        if area_id is not None or tipo_respuesta is not None:
             statement = statement.join(
                 Auditoria,
                 EjecucionAuditoria.auditoria_id == Auditoria.id,
-            ).where(Auditoria.area_id == area_id)
+            )
+        if area_id is not None:
+            statement = statement.where(Auditoria.area_id == area_id)
+        if tipo_respuesta is not None:
+            statement = statement.where(Auditoria.tipo_respuesta == tipo_respuesta)
+        if solo_auditores:
+            statement = (
+                statement.join(
+                    Usuario,
+                    EjecucionAuditoria.usuario_id == Usuario.id,
+                )
+                .join(Rol, Usuario.rol_id == Rol.id)
+                .where(Rol.nombre == "Auditor")
+            )
         if celula_id is not None:
             statement = statement.where(EjecucionAuditoria.celula_id == celula_id)
         if usuario_id is not None:

@@ -66,6 +66,11 @@ const router = createRouter({
           component: () => import('@/views/ejecuciones/AuditoriasRealizadasView.vue'),
         },
         {
+          path: 'hallazgos',
+          name: 'hallazgos',
+          component: () => import('@/views/hallazgos/HallazgosView.vue'),
+        },
+        {
           path: 'revision-auditorias',
           name: 'revision-auditorias',
           component: () => import('@/views/ejecuciones/RevisarAuditoriasView.vue'),

@@ -6,12 +6,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlmodel import Session
 
+from app.models.area import Area
 from app.models.auditoria import Auditoria
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import Hallazgo
 from app.models.respuesta import Respuesta
-from app.schemas.hallazgo import HallazgoCreate, HallazgoUpdate
+from app.schemas.hallazgo import (
+    HallazgoCreate,
+    HallazgoSeguimientoUpdate,
+    HallazgoUpdate,
+)
 from app.services.hallazgo_service import HallazgoService
 
 
@@ -63,6 +68,14 @@ def _auditoria(id_: int = 1, nombre: str = "Ensamble Final") -> MagicMock:
     return a
 
 
+def _area(id_: int = 1, nombre: str = "Pulido", activa: bool = True) -> MagicMock:
+    a = MagicMock(spec=Area)
+    a.id = id_
+    a.nombre = nombre
+    a.activa = activa
+    return a
+
+
 class TestHallazgoService:
     """Pruebas unitarias para HallazgoService."""
 
@@ -77,8 +90,11 @@ class TestHallazgoService:
         ejecucion: EjecucionAuditoria | None,
         criterio: Criterio | None = None,
         auditoria: Auditoria | None = None,
+        area: Area | None = None,
     ) -> None:
         """Configura session.get para responder segun la clase consultada."""
+
+        area = area if area is not None else _area()
 
         def get_side(cls, _id):
             name = cls.__name__ if hasattr(cls, "__name__") else str(cls)
@@ -88,6 +104,8 @@ class TestHallazgoService:
                 return criterio
             if name == "Auditoria":
                 return auditoria
+            if name == "Area":
+                return area
             return None
 
         self.mock_session.get.side_effect = get_side
@@ -121,7 +139,9 @@ class TestHallazgoService:
                     ),
                 ):
                     datos = HallazgoCreate(
-                        descripcion="Detalle", respuesta_id=respuesta.id
+                        descripcion="Detalle",
+                        respuesta_id=respuesta.id,
+                        area_responsable_id=1,
                     )
                     resultado = self.service.crear(datos, self.usuario)
 
@@ -159,7 +179,9 @@ class TestHallazgoService:
                     ),
                 ):
                     datos = HallazgoCreate(
-                        descripcion="Mayor", respuesta_id=respuesta.id
+                        descripcion="Mayor",
+                        respuesta_id=respuesta.id,
+                        area_responsable_id=1,
                     )
                     resultado = self.service.crear(datos, self.usuario)
 
@@ -179,7 +201,9 @@ class TestHallazgoService:
             with pytest.raises(ValueError, match="Solo se pueden crear"):
                 self.service.crear(
                     HallazgoCreate(
-                        descripcion="x", respuesta_id=respuesta.id
+                        descripcion="x",
+                        respuesta_id=respuesta.id,
+                        area_responsable_id=1,
                     ),
                     self.usuario,
                 )
@@ -193,7 +217,9 @@ class TestHallazgoService:
         ):
             with pytest.raises(ValueError, match="Respuesta no encontrada"):
                 self.service.crear(
-                    HallazgoCreate(descripcion="x", respuesta_id=999),
+                    HallazgoCreate(
+                        descripcion="x", respuesta_id=999, area_responsable_id=1
+                    ),
                     self.usuario,
                 )
 
@@ -221,7 +247,9 @@ class TestHallazgoService:
                 with pytest.raises(ValueError, match="Ya existe un hallazgo"):
                     self.service.crear(
                         HallazgoCreate(
-                            descripcion="nuevo", respuesta_id=respuesta.id
+                            descripcion="nuevo",
+                            respuesta_id=respuesta.id,
+                            area_responsable_id=1,
                         ),
                         self.usuario,
                     )
@@ -393,7 +421,11 @@ class TestHallazgoService:
         ):
             with pytest.raises(ValueError, match="finalizada"):
                 self.service.crear(
-                    HallazgoCreate(descripcion="x", respuesta_id=respuesta.id),
+                    HallazgoCreate(
+                        descripcion="x",
+                        respuesta_id=respuesta.id,
+                        area_responsable_id=1,
+                    ),
                     self.usuario,
                 )
 
@@ -445,6 +477,194 @@ class TestHallazgoService:
         assert resultado.auditoria_nombre == "Ensamble Final"
         assert resultado.tipo == "R"
 
+    def test_listar_auditor_solo_ve_los_propios(self):
+        """Un Auditor solo consulta hallazgos de sus propias ejecuciones."""
+        usuario = _usuario(id_=7, rol_nombre="Auditor")
+
+        with patch.object(
+            type(self.service._repo), "listar", return_value=[]
+        ) as mock_listar:
+            self.service.listar(
+                usuario, estado="abierto", area_responsable_id=2
+            )
+
+        mock_listar.assert_called_once_with(
+            estado="abierto",
+            area_responsable_id=2,
+            solo_usuario_id=7,
+        )
+
+    def test_listar_gestion_ve_todos(self):
+        """Supervisor/Gerente/Admin consultan todos los hallazgos."""
+        usuario = _usuario(id_=7, rol_nombre="Supervisor")
+
+        with patch.object(
+            type(self.service._repo), "listar", return_value=[]
+        ) as mock_listar:
+            self.service.listar(usuario)
+
+        mock_listar.assert_called_once_with(
+            estado=None,
+            area_responsable_id=None,
+            solo_usuario_id=None,
+        )
+
+    def _configurar_para_seguimiento(self, usuario_id: int = 1):
+        respuesta = _respuesta()
+        ejecucion = _ejecucion(usuario_id=usuario_id)
+        self._configurar_lookups(respuesta, ejecucion)
+        return respuesta
+
+    def test_actualizar_seguimiento_cierra_con_fecha(self):
+        """Al pasar a 'cerrado' se registra fecha_cierre."""
+        hallazgo = Hallazgo(
+            id=1,
+            descripcion="x",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=100,
+        )
+        respuesta = self._configurar_para_seguimiento(usuario_id=1)
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ):
+            with patch.object(
+                type(self.service._respuesta_repo),
+                "obtener_por_id",
+                return_value=respuesta,
+            ):
+                with patch.object(
+                    type(self.service._repo),
+                    "actualizar",
+                    return_value=hallazgo,
+                ):
+                    with patch.object(
+                        type(self.service), "_enriquecer", return_value=MagicMock()
+                    ):
+                        self.service.actualizar_seguimiento(
+                            1,
+                            HallazgoSeguimientoUpdate(estado="cerrado"),
+                            self.usuario,
+                        )
+
+        assert hallazgo.estado == "cerrado"
+        assert hallazgo.fecha_cierre is not None
+
+    def test_actualizar_seguimiento_reapertura_limpia_fecha(self):
+        """Al reabrir se limpia fecha_cierre."""
+        hallazgo = Hallazgo(
+            id=1,
+            descripcion="x",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=100,
+            estado="cerrado",
+            fecha_cierre=datetime.utcnow(),
+        )
+        respuesta = self._configurar_para_seguimiento(usuario_id=1)
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ):
+            with patch.object(
+                type(self.service._respuesta_repo),
+                "obtener_por_id",
+                return_value=respuesta,
+            ):
+                with patch.object(
+                    type(self.service._repo),
+                    "actualizar",
+                    return_value=hallazgo,
+                ):
+                    with patch.object(
+                        type(self.service), "_enriquecer", return_value=MagicMock()
+                    ):
+                        self.service.actualizar_seguimiento(
+                            1,
+                            HallazgoSeguimientoUpdate(estado="en_proceso"),
+                            self.usuario,
+                        )
+
+        assert hallazgo.estado == "en_proceso"
+        assert hallazgo.fecha_cierre is None
+
+    def test_actualizar_seguimiento_sin_permiso(self):
+        """Un Auditor ajeno no puede dar seguimiento."""
+        hallazgo = Hallazgo(
+            id=1,
+            descripcion="x",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=100,
+        )
+        respuesta = self._configurar_para_seguimiento(usuario_id=1)
+        otro = _usuario(id_=2, rol_nombre="Auditor")
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ):
+            with patch.object(
+                type(self.service._respuesta_repo),
+                "obtener_por_id",
+                return_value=respuesta,
+            ):
+                with pytest.raises(ValueError, match="Solo el auditor"):
+                    self.service.actualizar_seguimiento(
+                        1,
+                        HallazgoSeguimientoUpdate(estado="cerrado"),
+                        otro,
+                    )
+
+    def test_actualizar_seguimiento_gestion_solo_visualiza(self):
+        """Supervisor/Gerente/Admin no pueden editar, solo el auditor dueño."""
+        hallazgo = Hallazgo(
+            id=1,
+            descripcion="x",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=100,
+        )
+        respuesta = self._configurar_para_seguimiento(usuario_id=1)
+        supervisor = _usuario(id_=9, rol_nombre="Supervisor")
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ):
+            with patch.object(
+                type(self.service._respuesta_repo),
+                "obtener_por_id",
+                return_value=respuesta,
+            ):
+                with pytest.raises(ValueError, match="Solo el auditor"):
+                    self.service.actualizar_seguimiento(
+                        1,
+                        HallazgoSeguimientoUpdate(estado="cerrado"),
+                        supervisor,
+                    )
+
+    def test_actualizar_seguimiento_estado_invalido(self):
+        """Rechaza estados fuera de la lista permitida."""
+        hallazgo = Hallazgo(
+            id=1,
+            descripcion="x",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=100,
+        )
+        respuesta = self._configurar_para_seguimiento(usuario_id=1)
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ):
+            with patch.object(
+                type(self.service._respuesta_repo),
+                "obtener_por_id",
+                return_value=respuesta,
+            ):
+                with pytest.raises(ValueError, match="Estado invalido"):
+                    self.service.actualizar_seguimiento(
+                        1,
+                        HallazgoSeguimientoUpdate(estado="desconocido"),
+                        self.usuario,
+                    )
+
+
 class TestHallazgoEndpoint:
     """Pruebas del endpoint HTTP de hallazgos (smoke test del schema)."""
 
@@ -462,3 +682,15 @@ class TestHallazgoEndpoint:
 
         with pytest.raises(ValidationError):
             HallazgoBase()  # type: ignore[call-arg]
+
+    def test_create_request_area_responsable_opcional(self):
+        """El body del POST acepta area_responsable_id opcional (None por defecto)."""
+        from app.schemas.hallazgo import HallazgoCreateRequest
+
+        payload = HallazgoCreateRequest(descripcion="x")
+        assert payload.area_responsable_id is None
+
+        payload = HallazgoCreateRequest(
+            descripcion="x", area_responsable_id=3
+        )
+        assert payload.area_responsable_id == 3

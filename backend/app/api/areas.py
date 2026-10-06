@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
+from app.auth.dependencies import get_current_active_user
 from app.auth.permissions import require_roles
 from app.db.database import get_session
 from app.models.area import Area
@@ -25,6 +26,19 @@ def listar_areas(
     Solo accesible por usuarios con rol **Administrador**.
     """
     return AreaService(session).listar(skip=skip, limit=limit)
+
+
+@router.get("/areas/activas", response_model=list[AreaRead])
+def listar_areas_activas(
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(get_current_active_user),
+) -> list[Area]:
+    """Lista las areas activas.
+
+    Disponible para cualquier usuario autenticado (p. ej. el auditor que
+    asigna el area responsable de un hallazgo).
+    """
+    return AreaService(session).listar_activas()
 
 
 @router.get("/areas/{area_id}", response_model=AreaRead)

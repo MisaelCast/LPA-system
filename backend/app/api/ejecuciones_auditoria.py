@@ -40,6 +40,8 @@ def listar_ejecuciones(
     fecha_desde: datetime | None = Query(default=None),
     fecha_hasta: datetime | None = Query(default=None),
     area_id: int | None = Query(default=None),
+    tipo_respuesta: str | None = Query(default=None),
+    solo_auditores: bool = Query(default=False),
     solo_propias: bool = Query(default=False),
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
@@ -57,6 +59,8 @@ def listar_ejecuciones(
         fecha_desde=fecha_desde,
         fecha_hasta=fecha_hasta,
         area_id=area_id,
+        tipo_respuesta=tipo_respuesta,
+        solo_auditores=solo_auditores,
         solo_propias=solo_propias,
     )
 

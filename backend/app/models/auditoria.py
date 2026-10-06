@@ -19,6 +19,7 @@ class Auditoria(SQLModel, table=True):
     nombre: str = Field(max_length=150, index=True)
     descripcion: str | None = Field(default=None, max_length=500)
     activa: bool = Field(default=True)
+    tipo_respuesta: str = Field(default="semaforo", max_length=20)
     capa_id: int = Field(foreign_key="capa.id")
     frecuencia_id: int = Field(foreign_key="frecuencia.id")
     area_id: int | None = Field(default=None, foreign_key="area.id")

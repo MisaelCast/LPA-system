@@ -5,6 +5,10 @@ export function obtenerAreas(): Promise<Area[]> {
   return api.get<Area[]>('/areas').then((res) => res.data)
 }
 
+export function obtenerAreasActivas(): Promise<Area[]> {
+  return api.get<Area[]>('/areas/activas').then((res) => res.data)
+}
+
 export function crearArea(datos: AreaCreate): Promise<Area> {
   return api.post<Area>('/areas', datos).then((res) => res.data)
 }

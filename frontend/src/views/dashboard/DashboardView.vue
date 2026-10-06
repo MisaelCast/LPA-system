@@ -117,6 +117,10 @@ function esFinalizada(estado: string): boolean {
 function abrirEjecucion(e: EjecucionAuditoriaListItem) {
   router.push({ name: 'ejecutar', query: { id: String(e.id) } })
 }
+
+function esCumplimiento(e: EjecucionAuditoriaListItem): boolean {
+  return e.tipo_respuesta === 'cumplimiento'
+}
 </script>
 
 <template>
@@ -233,10 +237,18 @@ function abrirEjecucion(e: EjecucionAuditoriaListItem) {
                 </td>
                 <td>
                   <span class="resultado">
-                    <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
-                    <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
-                    <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
-                    <span v-if="!e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r">—</span>
+                    <template v-if="esCumplimiento(e)">
+                      <span v-if="e.resumen.total_cumple" class="v">{{ e.resumen.total_cumple }} Cumple</span>
+                      <span v-if="e.resumen.total_no_cumple" class="r">{{ e.resumen.total_no_cumple }} No cumple</span>
+                      <span v-if="e.resumen.total_na" class="na">{{ e.resumen.total_na }} N/A</span>
+                      <span v-if="!e.resumen.total_cumple && !e.resumen.total_no_cumple && !e.resumen.total_na">—</span>
+                    </template>
+                    <template v-else>
+                      <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
+                      <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
+                      <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
+                      <span v-if="!e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r">—</span>
+                    </template>
                   </span>
                 </td>
                 <td>
@@ -428,6 +440,10 @@ function abrirEjecucion(e: EjecucionAuditoriaListItem) {
 
 .resultado .r {
   color: var(--c-danger, #dc2626);
+}
+
+.resultado .na {
+  color: var(--c-ink-3, #64748b);
 }
 
 @media (max-width: 768px) {

@@ -1,7 +1,7 @@
 from pydantic import ConfigDict, field_validator
 from sqlmodel import Field, SQLModel
 
-_VALORES_PERMITIDOS: set[str] = {"V", "A", "R"}
+_VALORES_PERMITIDOS: set[str] = {"V", "A", "R", "cumple", "no_cumple", "na"}
 
 
 def _validar_valor(v: str | None) -> str | None:

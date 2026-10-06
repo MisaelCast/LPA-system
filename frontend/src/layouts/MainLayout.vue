@@ -49,6 +49,7 @@ const enlaces = computed(() => [
   { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin },
   { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: true },
   { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: true },
+  { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: true },
   {
     to: '/revision-auditorias',
     label: 'Revisión de auditorías',
@@ -133,6 +134,10 @@ function handleLogout() {
             <template v-else-if="enlace.icon === 'review'">
               <path d="M12 3.2l6.8 2.8V12c0 4.2-2.8 7.2-6.8 8.8C7.8 19.2 5 16.2 5 12V6L12 3.2z" />
               <path d="M9 12l2.1 2.1 4-4" />
+            </template>
+            <template v-else-if="enlace.icon === 'flag'">
+              <path d="M6 4v16" />
+              <path d="M6 5h10l-1.8 3.5L16 12H6" />
             </template>
           </svg>
           <span class="nav-label">{{ enlace.label }}</span>

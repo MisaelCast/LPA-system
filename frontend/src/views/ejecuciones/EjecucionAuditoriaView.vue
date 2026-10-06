@@ -2,7 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Auditoria } from '@/types/auditoria'
-import type { Celula } from '@/types/area'
+import type { Area, Celula } from '@/types/area'
 import type { EjecucionAuditoria, CriterioRespuesta } from '@/types/ejecucion'
 import {
   obtenerAuditoriasDisponibles,
@@ -17,6 +17,7 @@ import {
   actualizarHallazgo,
   eliminarHallazgo,
 } from '@/services/hallazgo.service'
+import { obtenerAreasActivas } from '@/services/area.service'
 
 const router = useRouter()
 const route = useRoute()
@@ -30,8 +31,10 @@ const auditorias = ref<Auditoria[]>([])
 const auditoriaSeleccionada = ref<Auditoria | null>(null)
 const celulas = ref<Celula[]>([])
 const ejecucion = ref<EjecucionAuditoria | null>(null)
+const areas = ref<Area[]>([])
 
 const hallazgosInputs = ref<Record<number, string>>({})
+const hallazgosAreas = ref<Record<number, number | null>>({})
 const hallazgosGuardando = ref<Record<number, boolean>>({})
 const hallazgosError = ref<Record<number, string>>({})
 
@@ -41,6 +44,24 @@ const respondidos = computed(() =>
 )
 const total = computed(() => criterios.value.length)
 const finalizada = computed(() => ejecucion.value?.estado === 'finalizada')
+
+function esCumplimiento(): boolean {
+  return ejecucion.value?.tipo_respuesta === 'cumplimiento'
+}
+
+const opcionesRespuesta = computed(() =>
+  esCumplimiento()
+    ? [
+        { valor: 'cumple', label: 'Cumple', css: 'verde' },
+        { valor: 'no_cumple', label: 'No cumple', css: 'rojo' },
+        { valor: 'na', label: 'N/A', css: 'neutro' },
+      ]
+    : [
+        { valor: 'V', label: 'V', css: 'verde' },
+        { valor: 'A', label: 'A', css: 'amarillo' },
+        { valor: 'R', label: 'R', css: 'rojo' },
+      ],
+)
 
 type FilaHeader = {
   tipo: 'header'
@@ -87,6 +108,7 @@ function limpiarMensajes() {
 }
 
 onMounted(async () => {
+  cargarAreas()
   const idParam = route.query.id
   if (idParam) {
     const id = Number(idParam)
@@ -101,6 +123,14 @@ onMounted(async () => {
     mostrarError('Error al cargar auditorías', err)
   }
 })
+
+async function cargarAreas() {
+  try {
+    areas.value = await obtenerAreasActivas()
+  } catch {
+    areas.value = []
+  }
+}
 
 async function cargarEjecucionExistente(id: number) {
   limpiarMensajes()
@@ -120,6 +150,10 @@ async function cargarEjecucionExistente(id: number) {
 function seleccionarAuditoria(auditoria: Auditoria) {
   limpiarMensajes()
   auditoriaSeleccionada.value = auditoria
+  if (auditoria.tipo_respuesta === 'cumplimiento') {
+    iniciar(null)
+    return
+  }
   paso.value = 'celulas'
   cargarCelulas(auditoria.id)
 }
@@ -132,12 +166,12 @@ async function cargarCelulas(auditoriaId: number) {
   }
 }
 
-async function iniciar(celula: Celula) {
+async function iniciar(celula: Celula | null) {
   limpiarMensajes()
   cargando.value = true
   try {
     const ej = await iniciarEjecucion(auditoriaSeleccionada.value!.id, {
-      celula_id: celula.id,
+      celula_id: celula ? celula.id : null,
     })
     ejecucion.value = ej
     sincronizarBorradorHallazgos()
@@ -164,7 +198,7 @@ function sincronizarBorradorHallazgos() {
 
 async function seleccionarValor(criterio: CriterioRespuesta, valor: string) {
   criterio.respuesta_valor = criterio.respuesta_valor === valor ? null : valor
-  if (valor === 'V' && criterio.respuesta_valor === 'V') {
+  if (valorEsNoHallazgo(criterio.respuesta_valor)) {
     criterio.respuesta_observaciones = null
     if (criterio.hallazgo_id !== null && !finalizada.value) {
       await quitarHallazgo(criterio)
@@ -184,6 +218,7 @@ async function quitarHallazgo(criterio: CriterioRespuesta) {
     criterio.hallazgo_id = null
     criterio.hallazgo_descripcion = null
     delete hallazgosInputs.value[criterio.id]
+    delete hallazgosAreas.value[criterio.id]
     delete hallazgosError.value[criterio.id]
   } catch (err) {
     mostrarError('No se pudo eliminar el hallazgo', err)
@@ -214,6 +249,11 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     hallazgosError.value[criterio.id] = 'La descripción es obligatoria.'
     return
   }
+  const areaId = hallazgosAreas.value[criterio.id] ?? null
+  if (criterio.hallazgo_id === null && !areaId && !esCumplimiento()) {
+    hallazgosError.value[criterio.id] = 'El área responsable es obligatoria.'
+    return
+  }
   hallazgosGuardando.value[criterio.id] = true
   hallazgosError.value[criterio.id] = 'Guardando respuesta, espera un momento…'
   try {
@@ -235,6 +275,7 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     } else {
       const creado = await crearHallazgo(crit.respuesta_id, {
         descripcion,
+        area_responsable_id: areaId,
       })
       crit.hallazgo_id = creado.id
       crit.hallazgo_descripcion = creado.descripcion
@@ -265,7 +306,7 @@ async function guardar() {
     ejecucion.value = await guardarRespuestas(ejecucion.value!.id, { respuestas })
     sincronizarBorradorHallazgos()
     for (const c of criterios.value) {
-      if (c.respuesta_valor === 'A' || c.respuesta_valor === 'R') {
+      if (mostrarCampoHallazgo(c)) {
         const borrador = (hallazgosInputs.value[c.id] ?? '').trim()
         if (borrador && c.hallazgo_id === null) {
           await guardarHallazgo(c)
@@ -298,8 +339,21 @@ async function finalizar() {
   }
 }
 
+function valorEsNoHallazgo(valor: string | null): boolean {
+  if (esCumplimiento()) return valor === 'cumple' || valor === 'na'
+  return valor === 'V'
+}
+
 function mostrarCampoHallazgo(criterio: CriterioRespuesta): boolean {
+  if (esCumplimiento()) return criterio.respuesta_valor === 'no_cumple'
   return criterio.respuesta_valor === 'A' || criterio.respuesta_valor === 'R'
+}
+
+function etiquetaHallazgo(valor: string | null): string {
+  if (esCumplimiento()) return 'Hallazgo de verificación (no cumple)'
+  return valor === 'A'
+    ? 'Hallazgo menor (corregido y retroalimentado)'
+    : 'Hallazgo mayor / grave'
 }
 
 function mostrarBadgeHallazgoPendiente(criterio: CriterioRespuesta): boolean {
@@ -310,8 +364,9 @@ function mostrarBadgeHallazgoPendiente(criterio: CriterioRespuesta): boolean {
 
 function claseChip(criterio: CriterioRespuesta, valor: string): string {
   if (criterio.respuesta_valor !== valor) return ''
-  if (valor === 'V') return 'verde'
+  if (valor === 'V' || valor === 'cumple') return 'verde'
   if (valor === 'A') return 'amarillo'
+  if (valor === 'na') return 'neutro'
   return 'rojo'
 }
 </script>
@@ -427,23 +482,13 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
               <span>{{ fila.criterio.descripcion }}</span>
               <div class="criterio-valores">
                 <button
-                  class="chip-btn verde"
-                  :class="{ activo: fila.criterio.respuesta_valor === 'V' }"
+                  v-for="op in opcionesRespuesta"
+                  :key="op.valor"
+                  class="chip-btn"
+                  :class="[op.css, { activo: fila.criterio.respuesta_valor === op.valor }]"
                   :disabled="finalizada"
-                  @click="seleccionarValor(fila.criterio, 'V')"
-                >V</button>
-                <button
-                  class="chip-btn amarillo"
-                  :class="{ activo: fila.criterio.respuesta_valor === 'A' }"
-                  :disabled="finalizada"
-                  @click="seleccionarValor(fila.criterio, 'A')"
-                >A</button>
-                <button
-                  class="chip-btn rojo"
-                  :class="{ activo: fila.criterio.respuesta_valor === 'R' }"
-                  :disabled="finalizada"
-                  @click="seleccionarValor(fila.criterio, 'R')"
-                >R</button>
+                  @click="seleccionarValor(fila.criterio, op.valor)"
+                >{{ op.label }}</button>
                 <span
                   v-if="mostrarBadgeHallazgoPendiente(fila.criterio)"
                   class="badge-pendiente"
@@ -457,13 +502,20 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                 :class="claseChip(fila.criterio, fila.criterio.respuesta_valor!)"
               >
                 <label>
-                  <strong>
-                    {{
-                      fila.criterio.respuesta_valor === 'A'
-                        ? 'Hallazgo menor (corregido y retroalimentado)'
-                        : 'Hallazgo mayor / grave'
-                    }}
-                  </strong>
+                  <strong>{{ etiquetaHallazgo(fila.criterio.respuesta_valor) }}</strong>
+                </label>
+                <label v-if="fila.criterio.hallazgo_id === null && !esCumplimiento()" class="hallazgo-area">
+                  <span>Área responsable</span>
+                  <select
+                    v-model.number="hallazgosAreas[fila.criterio.id]"
+                    class="input"
+                    :disabled="finalizada"
+                  >
+                    <option :value="null" disabled>Seleccione el área responsable</option>
+                    <option v-for="a in areas" :key="a.id" :value="a.id">
+                      {{ a.nombre }}
+                    </option>
+                  </select>
                 </label>
                 <textarea
                   v-model="hallazgosInputs[fila.criterio.id]"
@@ -501,7 +553,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
               </div>
             </div>
             <div
-              v-if="fila.criterio.respuesta_valor && fila.criterio.respuesta_valor !== 'V' && !mostrarCampoHallazgo(fila.criterio)"
+              v-if="fila.criterio.respuesta_valor && fila.criterio.respuesta_valor !== 'V' && !mostrarCampoHallazgo(fila.criterio) && !esCumplimiento()"
               class="criterio-obs"
             >
               <input
@@ -817,6 +869,16 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   color: #fff;
 }
 
+.chip-btn.neutro {
+  color: var(--c-ink-3, #64748b);
+  border-color: var(--c-ink-4, #94a3b8);
+}
+
+.chip-btn.neutro.activo {
+  background: var(--c-ink-3, #64748b);
+  color: #fff;
+}
+
 .badge-pendiente {
   font-size: 0.7rem;
   font-weight: 600;
@@ -872,6 +934,24 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
 .criterio-hallazgo label strong {
   color: var(--c-ink, #0f172a);
+}
+
+.hallazgo-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.6rem;
+}
+
+.hallazgo-area span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--c-ink-2, #334155);
+}
+
+.hallazgo-area select {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .hallazgo-input {

@@ -31,6 +31,16 @@ class AreaRepository:
             ).all()
         )
 
+    def listar_activas(self) -> list[Area]:
+        """Lista las areas activas ordenadas por nombre."""
+        return list(
+            self._session.exec(
+                select(Area)
+                .where(Area.activa == True)  # noqa: E712
+                .order_by(Area.nombre)
+            ).all()
+        )
+
     def crear(self, area: Area) -> Area:
         """Inserta una nueva area en la base de datos."""
         self._session.add(area)

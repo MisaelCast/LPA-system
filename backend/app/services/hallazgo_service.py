@@ -4,20 +4,27 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
+from app.models.area import Area
 from app.models.auditoria import Auditoria
 from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
-from app.models.hallazgo import Hallazgo
+from app.models.hallazgo import ESTADOS_HALLAZGO, Hallazgo
 from app.models.respuesta import Respuesta
 from app.models.usuario import Usuario
 from app.repositories.hallazgo_repository import HallazgoRepository
 from app.repositories.respuesta_repository import RespuestaRepository
-from app.schemas.hallazgo import HallazgoCreate, HallazgoDetallado, HallazgoUpdate
+from app.schemas.hallazgo import (
+    HallazgoCreate,
+    HallazgoDetallado,
+    HallazgoSeguimientoUpdate,
+    HallazgoUpdate,
+)
 
 
-_VALORES_CON_HALLAZGO: set[str] = {"A", "R"}
+_VALORES_CON_HALLAZGO: set[str] = {"A", "R", "no_cumple"}
 _ESTADO_FINALIZADA: str = "finalizada"
+_ROLES_GESTION: set[str] = {"Supervisor", "Gerente", "Administrador"}
 
 
 class HallazgoService:
@@ -67,11 +74,24 @@ class HallazgoService:
             if celula is not None:
                 celula_numero = celula.numero
 
+        area_responsable_nombre: str | None = None
+        if hallazgo.area_responsable_id is not None:
+            area_responsable = self._session.get(
+                Area, hallazgo.area_responsable_id
+            )
+            if area_responsable is not None:
+                area_responsable_nombre = area_responsable.nombre
+
         return HallazgoDetallado(
             id=hallazgo.id,
             descripcion=hallazgo.descripcion,
             fecha_creacion=hallazgo.fecha_creacion,
             respuesta_id=hallazgo.respuesta_id,
+            estado=hallazgo.estado,
+            accion_correctiva=hallazgo.accion_correctiva,
+            area_responsable_id=hallazgo.area_responsable_id,
+            area_responsable_nombre=area_responsable_nombre,
+            fecha_cierre=hallazgo.fecha_cierre,
             tipo=respuesta.valor,
             respuesta_valor=respuesta.valor,
             criterio_id=criterio.id,
@@ -81,6 +101,7 @@ class HallazgoService:
             ejecucion_estado=ejecucion.estado,
             auditoria_id=auditoria.id if auditoria else 0,
             auditoria_nombre=auditoria.nombre if auditoria else "",
+            auditor_id=ejecucion.usuario_id,
             celula_id=celula_id,
             celula_numero=celula_numero,
         )
@@ -114,7 +135,7 @@ class HallazgoService:
         if respuesta.valor not in _VALORES_CON_HALLAZGO:
             raise ValueError(
                 "Solo se pueden crear hallazgos para respuestas con "
-                "valor 'A' o 'R'."
+                "valor 'A', 'R' o 'no_cumple'."
             )
 
         criterio = self._session.get(Criterio, respuesta.criterio_id)
@@ -131,10 +152,27 @@ class HallazgoService:
                 "Ya existe un hallazgo registrado para esta respuesta."
             )
 
+        area_id = datos.area_responsable_id
+        if area_id is None:
+            auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
+            area_id = auditoria.area_id if auditoria else None
+
+        if area_id is None:
+            raise ValueError(
+                "El area responsable no existe o esta inactiva."
+            )
+        area = self._session.get(Area, area_id)
+        if area is None or not area.activa:
+            raise ValueError(
+                "El area responsable no existe o esta inactiva."
+            )
+
         hallazgo = Hallazgo(
             descripcion=datos.descripcion,
             fecha_creacion=datetime.now(timezone.utc),
             respuesta_id=respuesta.id,
+            estado="abierto",
+            area_responsable_id=area_id,
         )
         guardado = self._repo.crear(hallazgo)
         return self._enriquecer(guardado)
@@ -220,3 +258,79 @@ class HallazgoService:
         detallados = [self._enriquecer(h) for h in hallazgos]
         detallados.sort(key=lambda h: (h.criterio_orden, h.id))
         return detallados
+
+    def _rol(self, usuario: Usuario) -> str:
+        return getattr(getattr(usuario, "rol", None), "nombre", "")
+
+    def _es_gestion(self, usuario: Usuario) -> bool:
+        return self._rol(usuario) in _ROLES_GESTION
+
+    def listar(
+        self,
+        usuario: Usuario,
+        estado: str | None = None,
+        area_responsable_id: int | None = None,
+    ) -> list[HallazgoDetallado]:
+        """Lista hallazgos segun el rol del usuario.
+
+        Un Auditor solo ve los hallazgos de sus propias ejecuciones;
+        Supervisor/Gerente/Administrador ven todos.
+        """
+        solo_usuario_id = None if self._es_gestion(usuario) else usuario.id
+        hallazgos = self._repo.listar(
+            estado=estado,
+            area_responsable_id=area_responsable_id,
+            solo_usuario_id=solo_usuario_id,
+        )
+        return [self._enriquecer(h) for h in hallazgos]
+
+    def actualizar_seguimiento(
+        self,
+        hallazgo_id: int,
+        datos: HallazgoSeguimientoUpdate,
+        usuario: Usuario,
+    ) -> HallazgoDetallado:
+        """Actualiza estado, accion correctiva y area responsable.
+
+        Solo el auditor que registró el hallazgo puede darle seguimiento.
+        Los roles de gestion (Supervisor/Gerente/Administrador) solo pueden
+        visualizarlo. No depende del estado de la ejecucion (permite cerrar
+        hallazgos de ejecuciones ya finalizadas).
+        """
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+
+        respuesta = self._obtener_respuesta(hallazgo.respuesta_id)
+        ejecucion = self._obtener_ejecucion(respuesta.ejecucion_auditoria_id)
+
+        if usuario.id != ejecucion.usuario_id:
+            raise ValueError(
+                "Solo el auditor que registró el hallazgo puede darle "
+                "seguimiento."
+            )
+
+        if datos.estado is not None:
+            if datos.estado not in ESTADOS_HALLAZGO:
+                raise ValueError(
+                    "Estado invalido. Debe ser abierto, en_proceso o cerrado."
+                )
+            hallazgo.estado = datos.estado
+            if datos.estado == "cerrado":
+                hallazgo.fecha_cierre = datetime.now(timezone.utc)
+            else:
+                hallazgo.fecha_cierre = None
+
+        if datos.accion_correctiva is not None:
+            hallazgo.accion_correctiva = datos.accion_correctiva
+
+        if datos.area_responsable_id is not None:
+            area = self._session.get(Area, datos.area_responsable_id)
+            if area is None or not area.activa:
+                raise ValueError(
+                    "El area responsable no existe o esta inactiva."
+                )
+            hallazgo.area_responsable_id = datos.area_responsable_id
+
+        actualizado = self._repo.actualizar(hallazgo)
+        return self._enriquecer(actualizado)

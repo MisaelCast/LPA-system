@@ -3,6 +3,7 @@ export interface Auditoria {
   nombre: string
   descripcion: string | null
   activa: boolean
+  tipo_respuesta?: string
   capa_id: number
   frecuencia_id: number
   area_id: number | null

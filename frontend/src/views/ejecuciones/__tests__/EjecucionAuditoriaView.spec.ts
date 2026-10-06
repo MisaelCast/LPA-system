@@ -83,6 +83,13 @@ vi.mock('@/services/hallazgo.service', () => ({
   listarHallazgosDeEjecucion: vi.fn().mockResolvedValue([]),
 }))
 
+vi.mock('@/services/area.service', () => ({
+  obtenerAreasActivas: vi.fn().mockResolvedValue([
+    { id: 1, nombre: 'Pulido', descripcion: null, activa: true },
+  ]),
+  obtenerAreas: vi.fn().mockResolvedValue([]),
+}))
+
 import EjecucionAuditoriaView from '../EjecucionAuditoriaView.vue'
 
 function makeRouter() {
@@ -146,6 +153,7 @@ describe('EjecucionAuditoriaView - hallazgos flow', () => {
     const crit = wrapper.vm.ejecucion.criterios[0]
     crit.respuesta_valor = 'A'
     wrapper.vm.hallazgosInputs[crit.id] = 'Falta de EPP'
+    wrapper.vm.hallazgosAreas[crit.id] = 1
 
     await wrapper.vm.guardarHallazgo(crit)
     await flushPromises()

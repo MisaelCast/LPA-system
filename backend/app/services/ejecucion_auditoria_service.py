@@ -18,6 +18,11 @@ from app.repositories.ejecucion_auditoria_repository import (
 )
 from app.repositories.respuesta_repository import RespuestaRepository
 
+_VALORES_POR_TIPO_RESPUESTA: dict[str, set[str]] = {
+    "semaforo": {"V", "A", "R"},
+    "cumplimiento": {"cumple", "no_cumple", "na"},
+}
+
 
 class EjecucionAuditoriaService:
     """Servicio que encapsula la logica de negocio de ejecuciones de auditoria."""
@@ -34,10 +39,14 @@ class EjecucionAuditoriaService:
         object.__setattr__(ejecucion, "area_nombre", "")
         object.__setattr__(ejecucion, "celula_numero", None)
         object.__setattr__(ejecucion, "auditor_nombre", "")
+        object.__setattr__(ejecucion, "tipo_respuesta", "semaforo")
 
         auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
         if auditoria:
             object.__setattr__(ejecucion, "auditoria_nombre", auditoria.nombre)
+            object.__setattr__(
+                ejecucion, "tipo_respuesta", auditoria.tipo_respuesta
+            )
             if auditoria.area_id:
                 from app.models.area import Area
 
@@ -114,11 +123,19 @@ class EjecucionAuditoriaService:
         return ejecucion
 
     def listar_disponibles(self, usuario: Usuario) -> list[Auditoria]:
-        auditorias = list(
-            self._session.exec(
-                select(Auditoria).where(Auditoria.activa == True)
-            ).all()
-        )
+        query = select(Auditoria).where(Auditoria.activa == True)  # noqa: E712
+
+        rol_nombre = getattr(getattr(usuario, "rol", None), "nombre", "")
+        if rol_nombre in ("Auditor", "Supervisor", "Gerente"):
+            from app.models.capa import Capa
+
+            capa = self._session.exec(
+                select(Capa).where(Capa.nombre == rol_nombre)
+            ).first()
+            if capa is not None:
+                query = query.where(Auditoria.capa_id == capa.id)
+
+        auditorias = list(self._session.exec(query).all())
         return [self._enriquecer_auditoria(a) for a in auditorias]
 
     def _enriquecer_auditoria(self, auditoria: Auditoria) -> Auditoria:
@@ -237,11 +254,17 @@ class EjecucionAuditoriaService:
         total_v = sum(1 for r in respuestas if r.valor == "V")
         total_a = sum(1 for r in respuestas if r.valor == "A")
         total_r = sum(1 for r in respuestas if r.valor == "R")
+        total_cumple = sum(1 for r in respuestas if r.valor == "cumple")
+        total_no_cumple = sum(1 for r in respuestas if r.valor == "no_cumple")
+        total_na = sum(1 for r in respuestas if r.valor == "na")
         return {
             "total_criterios": total_criterios,
             "total_v": total_v,
             "total_a": total_a,
             "total_r": total_r,
+            "total_cumple": total_cumple,
+            "total_no_cumple": total_no_cumple,
+            "total_na": total_na,
         }
 
     def _contar_criterios_activos(self, auditoria_id: int) -> int:
@@ -252,16 +275,24 @@ class EjecucionAuditoriaService:
             )
         ).one()
 
+    def _valores_permitidos_por_auditoria(
+        self, auditoria: Auditoria | None
+    ) -> set[str]:
+        tipo = auditoria.tipo_respuesta if auditoria else "semaforo"
+        return _VALORES_POR_TIPO_RESPUESTA.get(tipo, _VALORES_POR_TIPO_RESPUESTA["semaforo"])
+
     def _a_list_item(
         self, ejecucion: EjecucionAuditoria, respuestas: list[Respuesta]
     ) -> dict:
         auditoria_nombre = ""
         area_id: int | None = None
         area_nombre: str | None = None
+        tipo_respuesta = "semaforo"
 
         auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
         if auditoria:
             auditoria_nombre = auditoria.nombre
+            tipo_respuesta = auditoria.tipo_respuesta
             if auditoria.area_id:
                 area_id = auditoria.area_id
                 area = self._session.get(Area, auditoria.area_id)
@@ -293,6 +324,7 @@ class EjecucionAuditoriaService:
             "celula_numero": celula_numero,
             "area_id": area_id,
             "area_nombre": area_nombre,
+            "tipo_respuesta": tipo_respuesta,
             "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
         }
 
@@ -308,6 +340,8 @@ class EjecucionAuditoriaService:
         fecha_desde: datetime | None = None,
         fecha_hasta: datetime | None = None,
         area_id: int | None = None,
+        tipo_respuesta: str | None = None,
+        solo_auditores: bool = False,
         solo_propias: bool = False,
     ) -> list[dict]:
         """Lista las ejecuciones del historial con sus resumenes V/A/R.
@@ -335,6 +369,8 @@ class EjecucionAuditoriaService:
             fecha_desde=fecha_desde,
             fecha_hasta=fecha_hasta,
             area_id=area_id,
+            tipo_respuesta=tipo_respuesta,
+            solo_auditores=solo_auditores,
         )
 
         respuestas_por_ejecucion: dict[int, list[Respuesta]] = {}
@@ -419,6 +455,7 @@ class EjecucionAuditoriaService:
             "celula_numero": getattr(ejecucion, "celula_numero", None),
             "auditor_nombre": getattr(ejecucion, "auditor_nombre", ""),
             "area_id": area_id,
+            "tipo_respuesta": getattr(ejecucion, "tipo_respuesta", "semaforo"),
             "criterios": getattr(ejecucion, "criterios", []),
             "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
         }
@@ -451,10 +488,12 @@ class EjecucionAuditoriaService:
                     "criterio_id y valor son requeridos para cada respuesta."
                 )
 
-            if valor not in ("V", "A", "R"):
+            valores_permitidos = self._valores_permitidos_por_auditoria(auditoria)
+
+            if valor not in valores_permitidos:
                 raise ValueError(
                     f"Valor de respuesta invalido '{valor}'. "
-                    "Debe ser V, A o R."
+                    f"Debe ser uno de: {', '.join(sorted(valores_permitidos))}."
                 )
 
             criterio = self._session.get(Criterio, criterio_id)

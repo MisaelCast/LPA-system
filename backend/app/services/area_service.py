@@ -18,6 +18,10 @@ class AreaService:
         """Obtiene un listado paginado de areas."""
         return self._repo.listar(skip=skip, limit=limit)
 
+    def listar_activas(self) -> list[Area]:
+        """Obtiene las areas activas ordenadas por nombre."""
+        return self._repo.listar_activas()
+
     def obtener_por_id(self, area_id: int) -> Area:
         """Busca un area por su identificador.
 

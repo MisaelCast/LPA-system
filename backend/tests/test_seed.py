@@ -13,9 +13,12 @@ from app.schemas.ejecucion_auditoria import EjecucionAuditoriaRead
 from app.seed import (
     _AUDITORIA_PULIDO_DESCRIPCION,
     _AUDITORIA_PULIDO_NOMBRE,
+    _AUDITORIA_VERIFICACION_SUFIJO,
     _CRITERIOS_PULIDO,
+    _CRITERIOS_VERIFICACION_SUPERVISOR,
     _seed_areas,
     _seed_auditoria_pulido,
+    _seed_auditoria_verificacion_supervisor,
     _seed_capas,
     _seed_frecuencias,
     _seed_roles,
@@ -218,3 +221,74 @@ class TestSeedAuditoriaPulido:
         assert leido.criterios[40].seccion == "3. MECANISMO"
         assert leido.criterios[40].subseccion is None
         assert leido.criterios[40].subtitulo is None
+
+
+class TestSeedAuditoriaVerificacionSupervisor:
+    """Pruebas de integración para la seed de verificación del Supervisor."""
+
+    def _preparar(self, session: Session) -> None:
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_areas(session)
+
+    def test_crea_una_auditoria_por_area(self, session: Session):
+        self._preparar(session)
+        _seed_auditoria_verificacion_supervisor(session)
+
+        auditorias = session.exec(
+            select(Auditoria).where(
+                Auditoria.nombre.startswith(_AUDITORIA_VERIFICACION_SUFIJO)
+            )
+        ).all()
+
+        assert len(auditorias) == 2
+
+        for auditoria in auditorias:
+            assert auditoria.tipo_respuesta == "cumplimiento"
+
+            capa = session.get(Capa, auditoria.capa_id)
+            frecuencia = session.get(Frecuencia, auditoria.frecuencia_id)
+            assert capa.nombre == "Supervisor"
+            assert frecuencia.nombre == "Semanal"
+
+    def test_tiene_nueve_criterios_ordenados(self, session: Session):
+        self._preparar(session)
+        _seed_auditoria_verificacion_supervisor(session)
+
+        auditorias = session.exec(
+            select(Auditoria).where(
+                Auditoria.nombre.startswith(_AUDITORIA_VERIFICACION_SUFIJO)
+            )
+        ).all()
+
+        for auditoria in auditorias:
+            criterios = list(
+                session.exec(
+                    select(Criterio)
+                    .where(Criterio.auditoria_id == auditoria.id)
+                    .order_by(Criterio.orden)
+                ).all()
+            )
+            assert len(criterios) == 9
+            assert [c.orden for c in criterios] == list(range(1, 10))
+            assert [c.descripcion for c in criterios] == _CRITERIOS_VERIFICACION_SUPERVISOR
+
+    def test_seed_es_idempotente(self, session: Session):
+        self._preparar(session)
+        _seed_auditoria_verificacion_supervisor(session)
+        _seed_auditoria_verificacion_supervisor(session)
+
+        auditorias = session.exec(
+            select(Auditoria).where(
+                Auditoria.nombre.startswith(_AUDITORIA_VERIFICACION_SUFIJO)
+            )
+        ).all()
+        assert len(auditorias) == 2
+
+        for auditoria in auditorias:
+            criterios = list(
+                session.exec(
+                    select(Criterio).where(Criterio.auditoria_id == auditoria.id)
+                ).all()
+            )
+            assert len(criterios) == 9

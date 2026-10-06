@@ -120,11 +120,28 @@ function continuarDesdeDetalle() {
   }
 }
 
+function esCumplimiento(item: { tipo_respuesta?: string } | null | undefined): boolean {
+  return item?.tipo_respuesta === 'cumplimiento'
+}
+
 function claseValor(valor: string | null): string {
-  if (valor === 'V') return 'chip-v'
+  if (valor === 'V' || valor === 'cumple') return 'chip-v'
   if (valor === 'A') return 'chip-a'
-  if (valor === 'R') return 'chip-r'
+  if (valor === 'R' || valor === 'no_cumple') return 'chip-r'
   return 'chip-sin'
+}
+
+function etiquetaValor(valor: string | null): string {
+  if (valor === 'cumple') return 'Cumple'
+  if (valor === 'no_cumple') return 'No cumple'
+  if (valor === 'na') return 'N/A'
+  return valor || '—'
+}
+
+function hallazgoSufijo(valor: string | null): string {
+  if (valor === 'R') return ' (mayor)'
+  if (valor === 'A') return ' (menor)'
+  return ''
 }
 </script>
 
@@ -215,15 +232,30 @@ function claseValor(valor: string | null): string {
             <td>{{ e.usuario_nombre }}</td>
             <td>
               <span class="resultado">
-                <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
-                <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
-                <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
-                <span
-                  v-if="
-                    !e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r
-                  "
-                  >—</span
-                >
+                <template v-if="esCumplimiento(e)">
+                  <span v-if="e.resumen.total_cumple" class="v">{{ e.resumen.total_cumple }} Cumple</span>
+                  <span v-if="e.resumen.total_no_cumple" class="r">{{ e.resumen.total_no_cumple }} No cumple</span>
+                  <span v-if="e.resumen.total_na" class="na">{{ e.resumen.total_na }} N/A</span>
+                  <span
+                    v-if="
+                      !e.resumen.total_cumple &&
+                      !e.resumen.total_no_cumple &&
+                      !e.resumen.total_na
+                    "
+                    >—</span
+                  >
+                </template>
+                <template v-else>
+                  <span v-if="e.resumen.total_v" class="v">{{ e.resumen.total_v }} V</span>
+                  <span v-if="e.resumen.total_a" class="a">{{ e.resumen.total_a }} A</span>
+                  <span v-if="e.resumen.total_r" class="r">{{ e.resumen.total_r }} R</span>
+                  <span
+                    v-if="
+                      !e.resumen.total_v && !e.resumen.total_a && !e.resumen.total_r
+                    "
+                    >—</span
+                  >
+                </template>
               </span>
             </td>
             <td>
@@ -307,18 +339,34 @@ function claseValor(valor: string | null): string {
                   <span class="chip-stat-num">{{ detalle.resumen.total_criterios }}</span>
                   <span class="chip-stat-label">criterios</span>
                 </span>
-                <span class="chip-stat chip-stat-v">
-                  <span class="chip-stat-num">{{ detalle.resumen.total_v }}</span>
-                  <span class="chip-stat-label">V</span>
-                </span>
-                <span class="chip-stat chip-stat-a">
-                  <span class="chip-stat-num">{{ detalle.resumen.total_a }}</span>
-                  <span class="chip-stat-label">A</span>
-                </span>
-                <span class="chip-stat chip-stat-r">
-                  <span class="chip-stat-num">{{ detalle.resumen.total_r }}</span>
-                  <span class="chip-stat-label">R</span>
-                </span>
+                <template v-if="esCumplimiento(detalle)">
+                  <span class="chip-stat chip-stat-v">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_cumple }}</span>
+                    <span class="chip-stat-label">Cumple</span>
+                  </span>
+                  <span class="chip-stat chip-stat-r">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_no_cumple }}</span>
+                    <span class="chip-stat-label">No cumple</span>
+                  </span>
+                  <span class="chip-stat">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_na }}</span>
+                    <span class="chip-stat-label">N/A</span>
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="chip-stat chip-stat-v">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_v }}</span>
+                    <span class="chip-stat-label">V</span>
+                  </span>
+                  <span class="chip-stat chip-stat-a">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_a }}</span>
+                    <span class="chip-stat-label">A</span>
+                  </span>
+                  <span class="chip-stat chip-stat-r">
+                    <span class="chip-stat-num">{{ detalle.resumen.total_r }}</span>
+                    <span class="chip-stat-label">R</span>
+                  </span>
+                </template>
               </div>
             </section>
 
@@ -337,7 +385,7 @@ function claseValor(valor: string | null): string {
                     class="chip-valor"
                     :class="claseValor(c.respuesta_valor)"
                   >
-                    {{ c.respuesta_valor }}
+                    {{ etiquetaValor(c.respuesta_valor) }}
                   </span>
                   <span v-else class="chip-valor chip-sin">—</span>
                 </div>
@@ -351,7 +399,7 @@ function claseValor(valor: string | null): string {
                   v-if="c.hallazgo_id"
                   class="criterio-detalle-hallazgo"
                 >
-                  Hallazgo ({{ c.respuesta_valor === 'R' ? 'mayor' : 'menor' }}):
+                  Hallazgo{{ hallazgoSufijo(c.respuesta_valor) }}:
                   {{ c.hallazgo_descripcion }}
                 </div>
               </div>
@@ -405,6 +453,10 @@ function claseValor(valor: string | null): string {
 
 .resultado .r {
   color: var(--c-danger, #dc2626);
+}
+
+.resultado .na {
+  color: var(--c-ink-3, #64748b);
 }
 
 .detalle-modal {

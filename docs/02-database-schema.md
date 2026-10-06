@@ -90,6 +90,7 @@ CREATE TABLE auditoria (
     nombre        VARCHAR(150) NOT NULL,
     descripcion   VARCHAR(500),
     activa        BOOLEAN      NOT NULL DEFAULT TRUE,
+    tipo_respuesta VARCHAR(20)  NOT NULL DEFAULT 'semaforo',
     capa_id       INTEGER      NOT NULL REFERENCES capa (id),
     frecuencia_id INTEGER      NOT NULL REFERENCES frecuencia (id),
     area_id       INTEGER      REFERENCES area (id)
@@ -316,6 +317,7 @@ class Auditoria(SQLModel, table=True):
     nombre: str = Field(max_length=150, index=True)
     descripcion: str | None = Field(default=None, max_length=500)
     activa: bool = Field(default=True)
+    tipo_respuesta: str = Field(default="semaforo", max_length=20)
     capa_id: int = Field(foreign_key="capa.id")
     frecuencia_id: int = Field(foreign_key="frecuencia.id")
     area_id: int | None = Field(default=None, foreign_key="area.id")
@@ -506,3 +508,4 @@ class HallazgoResponsable(SQLModel, table=True):
 | `77d7424ea64a` | `celula` reemplaza `nombre` y `descripcion` por `numero`. |
 | `9c2f1a4b7d01` | `criterio` agrega jerarquía `seccion`/`subseccion`/`subtitulo`. |
 | `b1d4e7f20a35` | `hallazgo` agrega seguimiento (`estado`, `accion_correctiva`, `area_responsable_id`, `fecha_cierre`). |
+| `e5f8a1b2c3d4` | `auditoria` agrega `tipo_respuesta` (`semaforo` o `cumplimiento`). |

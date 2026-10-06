@@ -45,6 +45,30 @@ _PULIDO_SECCION_LIJADO_FRONTAL = "1. LIJADO CARA FRONTAL"
 _PULIDO_SECCION_LIJADO_TRASERA = "2. LIJADO CARA TRASERA"
 _PULIDO_SECCION_MECANISMO = "3. MECANISMO"
 
+_AUDITORIA_VERIFICACION_SUFIJO = "Auditoría de Verificación"
+_AUDITORIA_VERIFICACION_DESCRIPCION = (
+    "Verificación semanal del trabajo del Auditor (meta-auditoría)."
+)
+_AUDITORIA_VERIFICACION_TIPO_RESPUESTA = "cumplimiento"
+
+_CRITERIOS_VERIFICACION_SUPERVISOR = [
+    "El Auditor completó el 100% de las auditorías programadas del periodo "
+    "y las realizó dentro del plazo establecido.",
+    "El Auditor cubrió todas las células/áreas asignadas, sin omitir ninguna.",
+    "Las auditorías del Auditor contienen respuesta en todos los criterios "
+    "y no presentan registros incompletos.",
+    "Los hallazgos del Auditor están correctamente registrados, corresponden "
+    "a la situación observada y cuentan con evidencia.",
+    "Los hallazgos menores fueron corregidos y cerrados en un máximo de 7 días.",
+    "Los hallazgos críticos/recurrentes tienen acción correctiva asignada en "
+    "un máximo de 24 horas y seguimiento registrado.",
+    "Ningún hallazgo abierto permanece más de 2 días sin actualización o seguimiento.",
+    "Los hallazgos cerrados cuentan con evidencia suficiente de que la condición "
+    "fue corregida.",
+    "Los hallazgos reincidentes están identificados y cuentan con acción "
+    "correctiva para evitar su repetición.",
+]
+
 
 def _criterio_pulido(
     texto: str,
@@ -469,6 +493,72 @@ def _seed_auditoria_pulido(session: Session) -> None:
     session.commit()
 
 
+def _seed_auditoria_verificacion_supervisor(session: Session) -> None:
+    """Crea la auditoría de verificación del Supervisor para cada área.
+
+    Es idempotente y correctiva: busca por nombre la auditoría y los criterios
+    por auditoria_id + orden. No duplica si ya existen; si un criterio ya
+    existe, sincroniza su descripción. Las auditorías usan ``tipo_respuesta``
+    ``cumplimiento`` (Cumple / No cumple / No aplica).
+    """
+    capa = session.exec(select(Capa).where(Capa.nombre == "Supervisor")).first()
+    if capa is None:
+        raise ValueError("La capa 'Supervisor' no existe. Ejecute primero el seed de capas.")
+
+    frecuencia = session.exec(
+        select(Frecuencia).where(Frecuencia.nombre == "Semanal")
+    ).first()
+    if frecuencia is None:
+        raise ValueError("La frecuencia 'Semanal' no existe.")
+
+    areas = session.exec(select(Area).where(Area.activa == True)).all()
+
+    for area in areas:
+        nombre = f"{_AUDITORIA_VERIFICACION_SUFIJO} - {area.nombre}"
+
+        auditoria = session.exec(
+            select(Auditoria).where(Auditoria.nombre == nombre)
+        ).first()
+
+        if auditoria is None:
+            auditoria = Auditoria(
+                nombre=nombre,
+                descripcion=_AUDITORIA_VERIFICACION_DESCRIPCION,
+                activa=True,
+                tipo_respuesta=_AUDITORIA_VERIFICACION_TIPO_RESPUESTA,
+                capa_id=capa.id,
+                frecuencia_id=frecuencia.id,
+                area_id=area.id,
+            )
+            session.add(auditoria)
+            session.flush()
+        elif auditoria.tipo_respuesta != _AUDITORIA_VERIFICACION_TIPO_RESPUESTA:
+            auditoria.tipo_respuesta = _AUDITORIA_VERIFICACION_TIPO_RESPUESTA
+            session.add(auditoria)
+
+        for i, descripcion in enumerate(_CRITERIOS_VERIFICACION_SUPERVISOR, start=1):
+            existente = session.exec(
+                select(Criterio).where(
+                    Criterio.auditoria_id == auditoria.id,
+                    Criterio.orden == i,
+                )
+            ).first()
+            if existente is None:
+                session.add(
+                    Criterio(
+                        descripcion=descripcion,
+                        orden=i,
+                        activo=True,
+                        auditoria_id=auditoria.id,
+                    )
+                )
+            else:
+                existente.descripcion = descripcion
+                session.add(existente)
+
+    session.commit()
+
+
 def seed_inicial() -> None:
     """Ejecuta el seed de datos mínimos para que el sistema sea utilizable.
 
@@ -482,3 +572,4 @@ def seed_inicial() -> None:
         _seed_areas(session)
         _seed_auditoria_ensamble_final(session)
         _seed_auditoria_pulido(session)
+        _seed_auditoria_verificacion_supervisor(session)

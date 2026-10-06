@@ -27,6 +27,7 @@ export interface EjecucionAuditoria {
   area_nombre: string | null
   celula_numero: number | null
   auditor_nombre: string
+  tipo_respuesta?: string
   criterios: CriterioRespuesta[]
 }
 
@@ -49,6 +50,9 @@ export interface EjecucionResumen {
   total_v: number
   total_a: number
   total_r: number
+  total_cumple?: number
+  total_no_cumple?: number
+  total_na?: number
 }
 
 export interface EjecucionAuditoriaListItem {
@@ -63,6 +67,7 @@ export interface EjecucionAuditoriaListItem {
   celula_numero: number | null
   area_id: number | null
   area_nombre: string | null
+  tipo_respuesta?: string
   resumen: EjecucionResumen
 }
 
@@ -81,6 +86,8 @@ export interface EjecucionesFiltros {
   fecha_desde?: string
   fecha_hasta?: string
   area_id?: number
+  tipo_respuesta?: string
+  solo_auditores?: boolean
   solo_propias?: boolean
 }
 

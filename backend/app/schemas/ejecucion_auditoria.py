@@ -56,16 +56,24 @@ class EjecucionAuditoriaRead(EjecucionAuditoriaBase):
     area_nombre: str | None = None
     celula_numero: int | None = None
     auditor_nombre: str = ""
+    tipo_respuesta: str = "semaforo"
     criterios: list[CriterioRespuesta] = []
 
 
 class EjecucionResumen(SQLModel):
-    """Resumen de resultados V/A/R de una ejecucion."""
+    """Resumen de resultados de una ejecución.
+
+    Para auditorías ``semaforo`` se usan ``total_v/a/r``; para auditorías
+    ``cumplimiento`` se usan ``total_cumple/no_cumple/na``.
+    """
 
     total_criterios: int = 0
     total_v: int = 0
     total_a: int = 0
     total_r: int = 0
+    total_cumple: int = 0
+    total_no_cumple: int = 0
+    total_na: int = 0
 
 
 class EjecucionAuditoriaListItem(SQLModel):
@@ -82,6 +90,7 @@ class EjecucionAuditoriaListItem(SQLModel):
     celula_numero: int | None = None
     area_id: int | None = None
     area_nombre: str | None = None
+    tipo_respuesta: str = "semaforo"
     resumen: EjecucionResumen = EjecucionResumen()
 
 
