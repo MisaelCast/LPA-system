@@ -25,6 +25,7 @@ from app.services.programacion_service import (
     fecha_habilita,
     marcar_no_elaboradas,
     periodo_auditoria,
+    siguiente_habilita,
 )
 from app.utils.tiempo import ahora_business
 
@@ -309,6 +310,25 @@ class EjecucionAuditoriaService:
                 )
 
         self._validar_habilitacion(auditoria)
+        periodo = periodo_auditoria(
+            auditoria, self._frecuencia_de(auditoria), ahora_business()
+        )
+        pendiente = self._session.exec(
+            select(EjecucionAuditoria).where(
+                EjecucionAuditoria.auditoria_id == auditoria.id,
+                EjecucionAuditoria.celula_id == celula_id,
+                EjecucionAuditoria.usuario_id == usuario.id,
+                EjecucionAuditoria.fecha_programada == periodo,
+                EjecucionAuditoria.estado == "pendiente",
+            )
+        ).first()
+        if pendiente is not None:
+            # Ya existe la pendiente programada del periodo: se retoma en vez
+            # de crear otra ni rechazar con 409 (inicio desde Ejecutar).
+            pendiente.estado = "en_proceso"
+            pendiente.fecha = datetime.now(timezone.utc)
+            self._repo.actualizar(pendiente)
+            return pendiente
         self._validar_sin_abierta(auditoria, usuario, celula_id)
 
         ejecucion = EjecucionAuditoria(
@@ -664,20 +684,20 @@ class EjecucionAuditoriaService:
             if frecuencia is None:
                 continue
             if auditoria.tipo_respuesta == "cumplimiento":
-                items.append(
-                    self._pendiente_item(
-                        usuario, auditoria, frecuencia, None, ahora
-                    )
+                item = self._pendiente_item(
+                    usuario, auditoria, frecuencia, None, ahora
                 )
+                if item is not None:
+                    items.append(item)
             else:
                 for celula in self.obtener_celulas_disponibles(
                     auditoria.id, usuario
                 ):
-                    items.append(
-                        self._pendiente_item(
-                            usuario, auditoria, frecuencia, celula.id, ahora
-                        )
+                    item = self._pendiente_item(
+                        usuario, auditoria, frecuencia, celula.id, ahora
                     )
+                    if item is not None:
+                        items.append(item)
 
         orden_estado = {
             "atrasada": 0,
@@ -695,7 +715,7 @@ class EjecucionAuditoriaService:
         frecuencia: Frecuencia,
         celula_id: int | None,
         ahora: datetime,
-    ) -> dict:
+    ) -> dict | None:
         area_nombre = None
         if auditoria.area_id:
             area = self._session.get(Area, auditoria.area_id)
@@ -754,6 +774,26 @@ class EjecucionAuditoriaService:
             return _base("en_progreso", 0, "En progreso",
                          ejecucion.id, "continuar", habilita)
 
+        if (
+            ejecucion is not None
+            and ejecucion.estado in ("finalizada", "no_elaborada")
+        ):
+            # Periodo completado: el ítem ya no aparece como disponible;
+            # se anticipa la siguiente ocurrencia como bloqueada (o
+            # desaparece si la auditoría no tiene día fijo).
+            sig = siguiente_habilita(auditoria, frecuencia, habilita)
+            if sig is None:
+                return None
+            faltan = (sig.date() - ahora.date()).days
+            return _base(
+                "bloqueada",
+                -faltan,
+                "Mañana" if faltan == 1 else f"Faltan {faltan} días",
+                None,
+                None,
+                sig,
+            )
+
         if ejecucion is None:
             _crear_pendiente(
                 self._session, auditoria.id, celula_id, usuario.id, periodo
@@ -791,6 +831,10 @@ class EjecucionAuditoriaService:
         ejecucion = self._repo.obtener_por_id(ejecucion_id)
         if ejecucion is None:
             raise ValueError("Ejecucion de auditoria no encontrada.")
+        if ejecucion.estado == "en_proceso":
+            # Doble clic o reintento: ya iniciada, se responde la misma.
+            self._validar_puede_modificar(ejecucion, usuario)
+            return self._enriquecer_read(ejecucion)
         if ejecucion.estado != "pendiente":
             raise ValueError("La ejecución no está en estado pendiente.")
 

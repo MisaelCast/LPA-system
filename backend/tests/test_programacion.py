@@ -351,9 +351,9 @@ class TestHallazgosPorArea:
 
 
 class TestProgramacionSemanal:
-    """Auditorías semanales de Supervisor: solo se habilitan el viernes."""
+    """Auditorías semanales de Supervisor: solo se habilitan el jueves."""
 
-    Z = 4  # viernes, configurado en la seed
+    Z = 3  # jueves, configurado en la seed
 
     def _base(self, session: Session) -> tuple[Usuario, Auditoria]:
         _seed_capas(session)
@@ -382,7 +382,7 @@ class TestProgramacionSemanal:
             return_value=fecha,
         ).start()
 
-    def test_lunes_bloqueada_faltan_4_dias(self, session: Session):
+    def test_lunes_bloqueada_faltan_3_dias(self, session: Session):
         supervisor, _ = self._base(session)
         lunes = datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
         self._fijar_hoy(lunes)
@@ -393,16 +393,16 @@ class TestProgramacionSemanal:
         assert len(items) == 1
         item = items[0]
         assert item["estado"] == "bloqueada"
-        assert item["contador"] == "Faltan 4 días"
+        assert item["contador"] == "Faltan 3 días"
         assert item["accion"] is None
-        assert item["tooltip"] and "Viernes" in item["tooltip"]
+        assert item["tooltip"] and "Jueves" in item["tooltip"]
         # No se generó ninguna ejecución.
         assert len(session.exec(select(EjecucionAuditoria)).all()) == 0
 
-    def test_viernes_disponible(self, session: Session):
+    def test_jueves_disponible(self, session: Session):
         supervisor, _ = self._base(session)
-        viernes = datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
-        self._fijar_hoy(viernes)
+        jueves = datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(jueves)
         try:
             items = EjecucionAuditoriaService(session).mis_pendientes(supervisor)
         finally:
@@ -423,10 +423,10 @@ class TestProgramacionSemanal:
         finally:
             patch.stopall()
 
-    def test_iniciar_viernes_ok_y_duplicada_rechazada(self, session: Session):
+    def test_iniciar_jueves_ok_y_duplicada_rechazada(self, session: Session):
         supervisor, auditoria = self._base(session)
-        viernes = datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
-        self._fijar_hoy(viernes)
+        jueves = datetime(2026, 10, 8, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(jueves)
         try:
             service = EjecucionAuditoriaService(session)
             ejecucion = service.iniciar(auditoria.id, supervisor, celula_id=None)

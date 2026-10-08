@@ -95,6 +95,30 @@ def fecha_habilita(
     return None
 
 
+def siguiente_habilita(
+    auditoria: Auditoria,
+    frecuencia: Frecuencia,
+    habilita: datetime | None,
+) -> datetime | None:
+    """Siguiente ocurrencia **después** de completar el periodo actual.
+
+    - Semanales (``dia_semana``): +7 días.
+    - Diarias: el siguiente día hábil (salta fin de semana).
+    - Otras sin día fijo: ``None`` (el ítem desaparece hasta el siguiente
+      periodo, que calculará ``fecha_habilita``).
+    """
+    if habilita is None:
+        return None
+    if auditoria.dia_semana is not None:
+        return habilita + timedelta(days=7)
+    if frecuencia.dias == 1:
+        siguiente = habilita + timedelta(days=1)
+        while siguiente.weekday() >= 5:
+            siguiente += timedelta(days=1)
+        return siguiente
+    return None
+
+
 def marcar_no_elaboradas(
     session: Session, ahora: datetime | None = None
 ) -> int:
@@ -149,6 +173,11 @@ def _crear_pendiente(
     usuario_id: int,
     periodo: datetime,
 ) -> int:
+    # Bloquea la auditoría para serializar la creación entre peticiones
+    # concurrentes y evitar pendientes duplicadas (carrera check-then-insert).
+    session.execute(
+        select(Auditoria).where(Auditoria.id == auditoria_id).with_for_update()
+    )
     if _existe_ejecucion_periodo(
         session, auditoria_id, celula_id, usuario_id, periodo
     ):

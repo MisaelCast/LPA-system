@@ -50,7 +50,7 @@ _AUDITORIA_VERIFICACION_DESCRIPCION = (
     "Verificación semanal del trabajo del Auditor (meta-auditoría)."
 )
 _AUDITORIA_VERIFICACION_TIPO_RESPUESTA = "cumplimiento"
-_AUDITORIA_VERIFICACION_DIA_SEMANA = 4  # viernes (0=Lunes..6=Domingo)
+_AUDITORIA_VERIFICACION_DIA_SEMANA = 3  # jueves (0=Lunes..6=Domingo)
 
 _CRITERIOS_VERIFICACION_SUPERVISOR = [
     "El Auditor completó el 100% de las auditorías programadas del periodo "

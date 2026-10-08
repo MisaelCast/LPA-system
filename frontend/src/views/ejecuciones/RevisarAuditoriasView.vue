@@ -398,7 +398,7 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
               <th>Tipo</th>
               <th>Área responsable</th>
               <th>Estado</th>
-              <th>Acción del auditor</th>
+              <th>Acción correctiva</th>
             </tr>
           </thead>
           <tbody>
