@@ -3,9 +3,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+from app.models.usuario_celula import UsuarioCelula
+
 if TYPE_CHECKING:
     from app.models.area import Area
     from app.models.ejecucion_auditoria import EjecucionAuditoria
+    from app.models.usuario import Usuario
 
 
 class Celula(SQLModel, table=True):
@@ -22,4 +25,8 @@ class Celula(SQLModel, table=True):
     area: "Area" = Relationship(back_populates="celulas")
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="celula",
+    )
+    usuarios: list["Usuario"] = Relationship(
+        back_populates="celulas",
+        link_model=UsuarioCelula,
     )

@@ -61,6 +61,11 @@ const router = createRouter({
           component: () => import('@/views/ejecuciones/EjecucionAuditoriaView.vue'),
         },
         {
+          path: 'mis-pendientes',
+          name: 'mis-pendientes',
+          component: () => import('@/views/ejecuciones/PendientesView.vue'),
+        },
+        {
           path: 'auditorias-realizadas',
           name: 'auditorias-realizadas',
           component: () => import('@/views/ejecuciones/AuditoriasRealizadasView.vue'),

@@ -41,6 +41,16 @@ class CelulaRepository:
             ).all()
         )
 
+    def listar_todas(self) -> list[Celula]:
+        """Lista todas las células activas ordenadas por área y número."""
+        return list(
+            self._session.exec(
+                select(Celula)
+                .where(Celula.activa == True)  # noqa: E712
+                .order_by(Celula.area_id, Celula.numero)
+            ).all()
+        )
+
     def crear(self, celula: Celula) -> Celula:
         """Inserta una nueva celula en la base de datos."""
         self._session.add(celula)

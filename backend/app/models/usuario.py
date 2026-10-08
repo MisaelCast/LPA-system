@@ -4,9 +4,11 @@ from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.hallazgo_responsable import HallazgoResponsable
 from app.models.usuario_area import UsuarioArea
+from app.models.usuario_celula import UsuarioCelula
 
 if TYPE_CHECKING:
     from app.models.area import Area
+    from app.models.celula import Celula
     from app.models.ejecucion_auditoria import EjecucionAuditoria
     from app.models.hallazgo import Hallazgo
     from app.models.rol import Rol
@@ -28,6 +30,10 @@ class Usuario(SQLModel, table=True):
     areas: list["Area"] = Relationship(
         back_populates="usuarios",
         link_model=UsuarioArea,
+    )
+    celulas: list["Celula"] = Relationship(
+        back_populates="usuarios",
+        link_model=UsuarioCelula,
     )
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="usuario",

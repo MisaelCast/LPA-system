@@ -48,6 +48,7 @@ const enlaces = computed(() => [
   { to: '/capas', label: 'Capas', icon: 'layers', visible: authStore.isAdmin },
   { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin },
   { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: true },
+  { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: true },
   { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: true },
   { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: true },
   {
@@ -138,6 +139,10 @@ function handleLogout() {
             <template v-else-if="enlace.icon === 'flag'">
               <path d="M6 4v16" />
               <path d="M6 5h10l-1.8 3.5L16 12H6" />
+            </template>
+            <template v-else-if="enlace.icon === 'pend'">
+              <circle cx="12" cy="12" r="8.6" />
+              <path d="M12 7.2V12l3.2 2" />
             </template>
           </svg>
           <span class="nav-label">{{ enlace.label }}</span>

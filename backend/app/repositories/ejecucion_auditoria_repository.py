@@ -39,6 +39,7 @@ class EjecucionAuditoriaRepository:
         fecha_desde: datetime | None = None,
         fecha_hasta: datetime | None = None,
         area_id: int | None = None,
+        areas_ids: list[int] | None = None,
         tipo_respuesta: str | None = None,
         solo_auditores: bool = False,
     ) -> list[EjecucionAuditoria]:
@@ -49,13 +50,15 @@ class EjecucionAuditoriaRepository:
             statement = statement.where(
                 EjecucionAuditoria.auditoria_id == auditoria_id
             )
-        if area_id is not None or tipo_respuesta is not None:
+        if area_id is not None or areas_ids or tipo_respuesta is not None:
             statement = statement.join(
                 Auditoria,
                 EjecucionAuditoria.auditoria_id == Auditoria.id,
             )
         if area_id is not None:
             statement = statement.where(Auditoria.area_id == area_id)
+        if areas_ids:
+            statement = statement.where(Auditoria.area_id.in_(areas_ids))
         if tipo_respuesta is not None:
             statement = statement.where(Auditoria.tipo_respuesta == tipo_respuesta)
         if solo_auditores:

@@ -26,9 +26,10 @@ export const useUsuariosStore = defineStore('usuarios', () => {
     await cargarUsuarios()
   }
 
-  async function crear(datos: UsuarioCreate): Promise<void> {
-    await crearUsuario(datos)
+  async function crear(datos: UsuarioCreate): Promise<Usuario> {
+    const usuario = await crearUsuario(datos)
     await cargarUsuarios()
+    return usuario
   }
 
   return { usuarios, cargando, cargarUsuarios, actualizar, cambiarEstado, crear }

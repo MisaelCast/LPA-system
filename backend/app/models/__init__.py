@@ -14,6 +14,8 @@ from app.models.respuesta import Respuesta
 from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
+from app.models.usuario_celula import UsuarioCelula
+from app.models.usuario_supervisor import UsuarioSupervisor
 
 __all__ = [
     "Area",
@@ -30,4 +32,6 @@ __all__ = [
     "Rol",
     "Usuario",
     "UsuarioArea",
+    "UsuarioCelula",
+    "UsuarioSupervisor",
 ]

@@ -28,6 +28,10 @@ export interface EjecucionAuditoria {
   celula_numero: number | null
   auditor_nombre: string
   tipo_respuesta?: string
+  fecha_programada?: string | null
+  fecha_limite?: string | null
+  programada?: boolean
+  vencida?: boolean
   criterios: CriterioRespuesta[]
 }
 
@@ -68,6 +72,10 @@ export interface EjecucionAuditoriaListItem {
   area_id: number | null
   area_nombre: string | null
   tipo_respuesta?: string
+  fecha_programada?: string | null
+  fecha_limite?: string | null
+  programada?: boolean
+  vencida?: boolean
   resumen: EjecucionResumen
 }
 

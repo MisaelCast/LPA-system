@@ -20,13 +20,13 @@ _AREAS_INICIALES = [
     ("Pulido", "Área de pulido de producto."),
 ]
 _FRECUENCIAS_INICIALES = [
-    ("Diaria", "Cada dia"),
-    ("Semanal", "Cada semana"),
-    ("Quincenal", "Cada quince dias"),
-    ("Mensual", "Cada mes"),
-    ("Bimestral", "Cada dos meses"),
-    ("Trimestral", "Cada tres meses"),
-    ("Anual", "Cada año"),
+    ("Diaria", "Cada dia", 1),
+    ("Semanal", "Cada semana", 7),
+    ("Quincenal", "Cada quince dias", 15),
+    ("Mensual", "Cada mes", 30),
+    ("Bimestral", "Cada dos meses", 60),
+    ("Trimestral", "Cada tres meses", 90),
+    ("Anual", "Cada año", 365),
 ]
 
 _ADMIN_CORREO = "admin@lpa.com"
@@ -361,12 +361,15 @@ def _seed_areas(session: Session) -> None:
 
 def _seed_frecuencias(session: Session) -> None:
     """Crea las frecuencias iniciales si no existen. Es idempotente."""
-    for nombre, descripcion in _FRECUENCIAS_INICIALES:
+    for nombre, descripcion, dias in _FRECUENCIAS_INICIALES:
         existente = session.exec(
             select(Frecuencia).where(Frecuencia.nombre == nombre)
         ).first()
         if existente is None:
-            session.add(Frecuencia(nombre=nombre, descripcion=descripcion))
+            session.add(Frecuencia(nombre=nombre, descripcion=descripcion, dias=dias))
+        elif existente.dias != dias:
+            existente.dias = dias
+            session.add(existente)
 
     session.commit()
 

@@ -68,15 +68,16 @@ def listar_ejecuciones(
 @router.get("/filtros", response_model=OpcionesFiltrosRevision)
 def opciones_filtros_revision(
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Supervisor", "Gerente", "Administrador")),
+    usuario: Usuario = Depends(require_roles("Supervisor", "Gerente", "Administrador")),
 ):
     """Devuelve las opciones de filtro (áreas, células y auditores).
 
     Solo accesible por usuarios con rol **Supervisor**, **Gerente** o
-    **Administrador**.
+    **Administrador**. Para Supervisores y Gerentes, las áreas se limitan a las
+    asignadas.
     """
     service = EjecucionAuditoriaService(session)
-    return service.obtener_opciones_filtros()
+    return service.obtener_opciones_filtros(usuario)
 
 
 @router.get("/disponibles", response_model=list[AuditoriaRead])
@@ -96,16 +97,63 @@ def listar_auditorias_disponibles(
 def listar_celulas_disponibles(
     auditoria_id: int,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(get_current_active_user),
+    usuario: Usuario = Depends(get_current_active_user),
 ) -> list:
-    """Devuelve las celulas del area de una auditoria especifica."""
+    """Devuelve las celulas del area de una auditoria especifica.
+
+    Si el usuario tiene células a cargo, se limita a ellas.
+    """
     service = EjecucionAuditoriaService(session)
     try:
-        return service.obtener_celulas_disponibles(auditoria_id)
+        return service.obtener_celulas_disponibles(auditoria_id, usuario)
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if "no encontrada" in str(error).lower()
             else status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        )
+
+
+@router.post("/generar-programadas", response_model=dict)
+def generar_programadas(
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+):
+    """Genera (idempotente) las ejecuciones pendientes del periodo vigente.
+
+    Solo accesible por **Administrador** (o herramienta de pruebas).
+    """
+    from app.services.programacion_service import generar_pendientes
+
+    return generar_pendientes(session)
+
+
+@router.get("/pendientes", response_model=list[EjecucionAuditoriaListItem])
+def listar_pendientes(
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Lista las ejecuciones programadas ``pendiente`` del usuario autenticado."""
+    service = EjecucionAuditoriaService(session)
+    return service.listar_pendientes(usuario)
+
+
+@router.post(
+    "/pendientes/{ejecucion_id}/iniciar",
+    response_model=EjecucionAuditoriaRead,
+)
+def iniciar_pendiente(
+    ejecucion_id: int,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Transiciona una ejecución ``pendiente`` a ``en_proceso``."""
+    service = EjecucionAuditoriaService(session)
+    try:
+        return service.iniciar_pendiente(ejecucion_id, usuario)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
             detail=str(error),
         )
 

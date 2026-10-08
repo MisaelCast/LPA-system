@@ -1,6 +1,6 @@
 """Logica de negocio para EjecucionAuditoria y Respuesta."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, func, select
 
@@ -9,10 +9,12 @@ from app.models.auditoria import Auditoria
 from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
+from app.models.frecuencia import Frecuencia
 from app.models.hallazgo import Hallazgo
 from app.models.respuesta import Respuesta
 from app.models.rol import Rol
 from app.models.usuario import Usuario
+from app.models.usuario_celula import UsuarioCelula
 from app.repositories.ejecucion_auditoria_repository import (
     EjecucionAuditoriaRepository,
 )
@@ -23,6 +25,13 @@ _VALORES_POR_TIPO_RESPUESTA: dict[str, set[str]] = {
     "cumplimiento": {"cumple", "no_cumple", "na"},
 }
 
+_ESTADOS_VALIDOS: tuple[str, ...] = (
+    "pendiente",
+    "en_proceso",
+    "finalizada",
+    "vencida",
+)
+
 
 class EjecucionAuditoriaService:
     """Servicio que encapsula la logica de negocio de ejecuciones de auditoria."""
@@ -31,6 +40,46 @@ class EjecucionAuditoriaService:
         self._repo = EjecucionAuditoriaRepository(session)
         self._respuesta_repo = RespuestaRepository(session)
         self._session = session
+
+    def _dias_frecuencia_de_auditoria(self, auditoria_id: int) -> int | None:
+        auditoria = self._session.get(Auditoria, auditoria_id)
+        if auditoria is None:
+            return None
+        frecuencia = self._session.get(Frecuencia, auditoria.frecuencia_id)
+        return frecuencia.dias if frecuencia else None
+
+    def _programacion_de_ejecucion(
+        self, ejecucion: EjecucionAuditoria
+    ) -> dict:
+        """Calcula fecha_limite, programada y vencida de una ejecución.
+
+        ``vencida`` es derivado: una ejecución ``pendiente`` cuya fecha límite
+        (programada + frecuencia.dias) ya pasó.
+        """
+        programada = isinstance(ejecucion.fecha_programada, datetime)
+        fecha_limite: datetime | None = None
+        vencida = False
+
+        fecha_programada = ejecucion.fecha_programada
+        if isinstance(fecha_programada, datetime) and fecha_programada.tzinfo is None:
+            fecha_programada = fecha_programada.replace(tzinfo=timezone.utc)
+
+        if programada:
+            dias = self._dias_frecuencia_de_auditoria(ejecucion.auditoria_id)
+            if dias:
+                fecha_limite = fecha_programada + timedelta(days=dias)
+                if (
+                    ejecucion.estado == "pendiente"
+                    and datetime.now(timezone.utc) > fecha_limite
+                ):
+                    vencida = True
+
+        return {
+            "fecha_programada": fecha_programada,
+            "fecha_limite": fecha_limite,
+            "programada": programada,
+            "vencida": vencida,
+        }
 
     def _enriquecer_read(
         self, ejecucion: EjecucionAuditoria
@@ -53,6 +102,14 @@ class EjecucionAuditoriaService:
                 area = self._session.get(Area, auditoria.area_id)
                 if area:
                     object.__setattr__(ejecucion, "area_nombre", area.nombre)
+
+        programacion = self._programacion_de_ejecucion(ejecucion)
+        object.__setattr__(
+            ejecucion, "fecha_programada", programacion["fecha_programada"]
+        )
+        object.__setattr__(ejecucion, "fecha_limite", programacion["fecha_limite"])
+        object.__setattr__(ejecucion, "programada", programacion["programada"])
+        object.__setattr__(ejecucion, "vencida", programacion["vencida"])
 
         if ejecucion.celula_id:
             celula = self._session.get(Celula, ejecucion.celula_id)
@@ -135,6 +192,13 @@ class EjecucionAuditoriaService:
             if capa is not None:
                 query = query.where(Auditoria.capa_id == capa.id)
 
+            # Restringe a las áreas asignadas del usuario.
+            areas_ids = [a.id for a in usuario.areas]
+            if areas_ids:
+                query = query.where(Auditoria.area_id.in_(areas_ids))
+            else:
+                query = query.where(Auditoria.id == -1)
+
         auditorias = list(self._session.exec(query).all())
         return [self._enriquecer_auditoria(a) for a in auditorias]
 
@@ -163,12 +227,15 @@ class EjecucionAuditoriaService:
 
         return auditoria
 
-    def obtener_celulas_disponibles(self, auditoria_id: int) -> list[Celula]:
+    def obtener_celulas_disponibles(
+        self, auditoria_id: int, usuario: Usuario
+    ) -> list[Celula]:
         auditoria = self._session.get(Auditoria, auditoria_id)
         if auditoria is None:
             raise ValueError("Auditoria no encontrada.")
         if not auditoria.activa:
             raise ValueError("La auditoria no esta activa.")
+
         if auditoria.area_id is None:
             return list(
                 self._session.exec(
@@ -176,14 +243,17 @@ class EjecucionAuditoriaService:
                 ).all()
             )
 
-        return list(
-            self._session.exec(
-                select(Celula).where(
-                    Celula.area_id == auditoria.area_id,
-                    Celula.activa == True,
-                )
-            ).all()
+        query = select(Celula).where(
+            Celula.area_id == auditoria.area_id,
+            Celula.activa == True,  # noqa: E712
         )
+
+        # Si el usuario tiene células a cargo, se limita a esas.
+        celulas_ids = [c.id for c in usuario.celulas]
+        if celulas_ids:
+            query = query.where(Celula.id.in_(celulas_ids))
+
+        return list(self._session.exec(query).all())
 
     def iniciar(
         self, auditoria_id: int, usuario: Usuario, celula_id: int | None = None
@@ -311,6 +381,7 @@ class EjecucionAuditoriaService:
             usuario_nombre = usuario.nombre
 
         total_criterios = self._contar_criterios_activos(ejecucion.auditoria_id)
+        programacion = self._programacion_de_ejecucion(ejecucion)
 
         return {
             "id": ejecucion.id,
@@ -325,6 +396,10 @@ class EjecucionAuditoriaService:
             "area_id": area_id,
             "area_nombre": area_nombre,
             "tipo_respuesta": tipo_respuesta,
+            "fecha_programada": programacion["fecha_programada"],
+            "fecha_limite": programacion["fecha_limite"],
+            "programada": programacion["programada"],
+            "vencida": programacion["vencida"],
             "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
         }
 
@@ -349,7 +424,16 @@ class EjecucionAuditoriaService:
         Un auditor solo ve sus propias ejecuciones; un supervisor o gerente ve
         todas y un administrador ve todas salvo que se indique ``solo_propias``,
         en cuyo caso se limita a las propias (vista "Auditorías realizadas").
+
+        Los **Supervisores y Gerentes** además se restringen a sus áreas
+        asignadas: no ven ejecuciones de áreas ajenas.
         """
+        areas_ids: list[int] | None = None
+        if self._es_supervisor(usuario) or self._es_gerente(usuario):
+            areas_ids = [a.id for a in usuario.areas]
+            if not areas_ids:
+                areas_ids = [-1]  # sin áreas asignadas → no ve nada
+
         if solo_propias:
             usuario_id = usuario.id
         elif not (
@@ -369,6 +453,7 @@ class EjecucionAuditoriaService:
             fecha_desde=fecha_desde,
             fecha_hasta=fecha_hasta,
             area_id=area_id,
+            areas_ids=areas_ids,
             tipo_respuesta=tipo_respuesta,
             solo_auditores=solo_auditores,
         )
@@ -395,17 +480,22 @@ class EjecucionAuditoriaService:
             for e in ejecuciones
         ]
 
-    def obtener_opciones_filtros(self) -> dict:
+    def obtener_opciones_filtros(self, usuario: Usuario) -> dict:
         """Devuelve las opciones de filtro para la revisión de auditorías.
 
         Útil para poblar los selectores de área, célula y auditor de la vista
-        de revisión (Supervisor/Gerente/Administrador).
+        de revisión (Supervisor/Gerente/Administrador). Un Supervisor o Gerente
+        solo ve las áreas que tiene asignadas.
         """
+        areas_query = select(Area).where(Area.activa == True)  # noqa: E712
+        if self._es_supervisor(usuario) or self._es_gerente(usuario):
+            areas_ids = [a.id for a in usuario.areas]
+            areas_query = areas_query.where(
+                Area.id.in_(areas_ids) if areas_ids else Area.id == -1
+            )
         areas = list(
             self._session.exec(
-                select(Area)
-                .where(Area.activa == True)  # noqa: E712
-                .order_by(Area.nombre)
+                areas_query.order_by(Area.nombre)
             ).all()
         )
         celulas = list(
@@ -442,6 +532,8 @@ class EjecucionAuditoriaService:
         if auditoria and auditoria.area_id:
             area_id = auditoria.area_id
 
+        programacion = self._programacion_de_ejecucion(ejecucion)
+
         return {
             "id": ejecucion.id,
             "fecha": ejecucion.fecha,
@@ -456,9 +548,59 @@ class EjecucionAuditoriaService:
             "auditor_nombre": getattr(ejecucion, "auditor_nombre", ""),
             "area_id": area_id,
             "tipo_respuesta": getattr(ejecucion, "tipo_respuesta", "semaforo"),
+            "fecha_programada": programacion["fecha_programada"],
+            "fecha_limite": programacion["fecha_limite"],
+            "programada": programacion["programada"],
+            "vencida": programacion["vencida"],
             "criterios": getattr(ejecucion, "criterios", []),
             "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
         }
+
+    def listar_pendientes(self, usuario: Usuario) -> list[dict]:
+        """Lista las ejecuciones programadas del usuario aún sin terminar.
+
+        Incluye ``pendiente`` (aún no iniciada) y ``en_proceso`` (iniciadas
+        pero no finalizadas), para no perder de vista las que quedaron a
+        medias. Ordena primero las ``pendiente`` y luego las ``en_proceso``.
+        """
+        ejecuciones = list(
+            self._session.exec(
+                select(EjecucionAuditoria)
+                .where(
+                    EjecucionAuditoria.usuario_id == usuario.id,
+                    EjecucionAuditoria.estado.in_(
+                        ("pendiente", "en_proceso")
+                    ),
+                )
+                .order_by(
+                    EjecucionAuditoria.estado.desc(),
+                    EjecucionAuditoria.fecha_programada,
+                )
+            ).all()
+        )
+        return [self._a_list_item(e, []) for e in ejecuciones]
+
+    def iniciar_pendiente(
+        self, ejecucion_id: int, usuario: Usuario
+    ) -> EjecucionAuditoria:
+        """Transiciona una ejecución ``pendiente`` a ``en_proceso``."""
+        ejecucion = self._repo.obtener_por_id(ejecucion_id)
+        if ejecucion is None:
+            raise ValueError("Ejecucion de auditoria no encontrada.")
+        if ejecucion.estado != "pendiente":
+            raise ValueError("La ejecución no está en estado pendiente.")
+
+        self._validar_puede_modificar(ejecucion, usuario)
+
+        ejecucion.estado = "en_proceso"
+        ejecucion.fecha = datetime.now(timezone.utc)
+        self._repo.actualizar(ejecucion)
+
+        self._session.expire(ejecucion)
+        ejecucion = self._repo.obtener_por_id(ejecucion_id)
+        if ejecucion is None:
+            raise ValueError("Ejecucion de auditoria no encontrada.")
+        return self._enriquecer_read(ejecucion)
 
     def guardar_respuestas(
         self,
@@ -472,6 +614,10 @@ class EjecucionAuditoriaService:
         if ejecucion.estado == "finalizada":
             raise ValueError(
                 "No se puede modificar una ejecucion ya finalizada."
+            )
+        if ejecucion.estado == "pendiente":
+            raise ValueError(
+                "Debe iniciar la ejecución programada antes de responder."
             )
 
         self._validar_puede_modificar(ejecucion, usuario)

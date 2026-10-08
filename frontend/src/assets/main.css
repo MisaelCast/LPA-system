@@ -588,6 +588,16 @@ textarea {
   color: var(--c-warn-ink);
 }
 
+.badge-pendiente {
+  background: var(--c-primary-soft);
+  color: var(--c-primary-ink);
+}
+
+.badge-vencida {
+  background: var(--c-danger-soft);
+  color: var(--c-danger-ink);
+}
+
 .chip-v,
 .chip-a,
 .chip-r,

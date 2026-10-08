@@ -7,6 +7,7 @@ class FrecuenciaBase(SQLModel):
 
     nombre: str = Field(max_length=100)
     descripcion: str | None = Field(default=None, max_length=255)
+    dias: int = Field(ge=1)
 
 
 class FrecuenciaCreate(FrecuenciaBase):
@@ -18,6 +19,7 @@ class FrecuenciaUpdate(SQLModel):
 
     nombre: str | None = Field(default=None, max_length=100)
     descripcion: str | None = Field(default=None, max_length=255)
+    dias: int | None = Field(default=None, ge=1)
 
 
 class FrecuenciaRead(FrecuenciaBase):

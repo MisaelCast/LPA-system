@@ -33,6 +33,8 @@ Complementa a [Modelo de Dominio](./01-domain-model.md), que describe el negocio
 | 12 | `evidencia` | Archivo asociado a un hallazgo. |
 | 13 | `usuario_area` | Tabla intermedia N:M entre usuario y área. |
 | 14 | `hallazgo_responsable` | Tabla intermedia N:M entre hallazgo y usuario. |
+| 15 | `usuario_celula` | Tabla intermedia N:M entre usuario y célula a cargo. |
+| 16 | `usuario_supervisor` | Tabla intermedia N:M entre gerente y supervisores a cargo. |
 
 ---
 
@@ -61,7 +63,8 @@ CREATE UNIQUE INDEX ix_capa_nombre ON capa (nombre);
 CREATE TABLE frecuencia (
     id           SERIAL       PRIMARY KEY,
     nombre       VARCHAR(100) NOT NULL,
-    descripcion  VARCHAR(255)
+    descripcion  VARCHAR(255),
+    dias         INTEGER      NOT NULL
 );
 CREATE UNIQUE INDEX ix_frecuencia_nombre ON frecuencia (nombre);
 
@@ -120,13 +123,14 @@ CREATE TABLE criterio (
 
 -- ejecucion_auditoria: Auditoría realizada por un usuario en una fecha.
 CREATE TABLE ejecucion_auditoria (
-    id            SERIAL        PRIMARY KEY,
-    fecha         TIMESTAMP     NOT NULL,
-    observaciones VARCHAR(1000),
-    estado        VARCHAR(20)   NOT NULL DEFAULT 'en_proceso',
-    auditoria_id  INTEGER       NOT NULL REFERENCES auditoria (id),
-    usuario_id    INTEGER       NOT NULL REFERENCES usuario (id),
-    celula_id     INTEGER       REFERENCES celula (id)
+    id               SERIAL        PRIMARY KEY,
+    fecha            TIMESTAMP     NOT NULL,
+    fecha_programada TIMESTAMP WITH TIME ZONE,
+    observaciones    VARCHAR(1000),
+    estado           VARCHAR(20)   NOT NULL DEFAULT 'en_proceso',
+    auditoria_id     INTEGER       NOT NULL REFERENCES auditoria (id),
+    usuario_id       INTEGER       NOT NULL REFERENCES usuario (id),
+    celula_id        INTEGER       REFERENCES celula (id)
 );
 
 -- respuesta: Resultado observado para un criterio durante una ejecución.
@@ -169,6 +173,20 @@ CREATE TABLE usuario_area (
     PRIMARY KEY (usuario_id, area_id)
 );
 
+-- usuario_celula: Asigna usuarios a las células a cargo (N:M).
+CREATE TABLE usuario_celula (
+    usuario_id INTEGER NOT NULL REFERENCES usuario (id),
+    celula_id  INTEGER NOT NULL REFERENCES celula (id),
+    PRIMARY KEY (usuario_id, celula_id)
+);
+
+-- usuario_supervisor: Supervisores a cargo de un gerente (N:M).
+CREATE TABLE usuario_supervisor (
+    gerente_id    INTEGER NOT NULL REFERENCES usuario (id),
+    supervisor_id INTEGER NOT NULL REFERENCES usuario (id),
+    PRIMARY KEY (gerente_id, supervisor_id)
+);
+
 -- hallazgo_responsable: Usuarios responsables de atender hallazgos (N:M).
 CREATE TABLE hallazgo_responsable (
     hallazgo_id INTEGER NOT NULL REFERENCES hallazgo (id),
@@ -186,6 +204,9 @@ rol                  1 --- N  usuario
 area                 1 --- N  celula
 area                 1 --- N  auditoria
 area                 N --- N  usuario              (via usuario_area)
+area                 N --- N  usuario              (via usuario_celula)
+celula               N --- N  usuario              (via usuario_celula)
+usuario (gerente)    N --- N  usuario (supervisor) (via usuario_supervisor)
 capa                 1 --- N  auditoria
 frecuencia           1 --- N  auditoria
 auditoria            1 --- N  criterio
@@ -252,6 +273,7 @@ class Frecuencia(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     nombre: str = Field(max_length=100, unique=True, index=True)
     descripcion: str | None = Field(default=None, max_length=255)
+    dias: int = Field(ge=1)
 
     auditorias: list["Auditoria"] = Relationship(back_populates="frecuencia")
 ```
@@ -290,6 +312,10 @@ class Usuario(SQLModel, table=True):
     areas: list["Area"] = Relationship(
         back_populates="usuarios",
         link_model=UsuarioArea,
+    )
+    celulas: list["Celula"] = Relationship(
+        back_populates="usuarios",
+        link_model=UsuarioCelula,
     )
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="usuario",
@@ -349,6 +375,10 @@ class Celula(SQLModel, table=True):
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="celula",
     )
+    usuarios: list["Usuario"] = Relationship(
+        back_populates="celulas",
+        link_model=UsuarioCelula,
+    )
 ```
 
 ### `criterio` — `backend/app/models/criterio.py`
@@ -384,6 +414,7 @@ class EjecucionAuditoria(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     fecha: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    fecha_programada: datetime | None = Field(default=None)
     observaciones: str | None = Field(default=None, max_length=1000)
     estado: str = Field(default="en_proceso", max_length=20)
     auditoria_id: int = Field(foreign_key="auditoria.id")
@@ -486,6 +517,30 @@ class UsuarioArea(SQLModel, table=True):
     area_id: int = Field(foreign_key="area.id", primary_key=True)
 ```
 
+### `usuario_celula` — `backend/app/models/usuario_celula.py`
+
+```python
+class UsuarioCelula(SQLModel, table=True):
+    """Asigna usuarios a las células donde pueden operar (N:M)."""
+
+    __tablename__ = "usuario_celula"
+
+    usuario_id: int = Field(foreign_key="usuario.id", primary_key=True)
+    celula_id: int = Field(foreign_key="celula.id", primary_key=True)
+```
+
+### `usuario_supervisor` — `backend/app/models/usuario_supervisor.py`
+
+```python
+class UsuarioSupervisor(SQLModel, table=True):
+    """Relaciona a un Gerente con los Supervisores a su cargo (N:M)."""
+
+    __tablename__ = "usuario_supervisor"
+
+    gerente_id: int = Field(foreign_key="usuario.id", primary_key=True)
+    supervisor_id: int = Field(foreign_key="usuario.id", primary_key=True)
+```
+
 ### `hallazgo_responsable` — `backend/app/models/hallazgo_responsable.py`
 
 ```python
@@ -509,3 +564,5 @@ class HallazgoResponsable(SQLModel, table=True):
 | `9c2f1a4b7d01` | `criterio` agrega jerarquía `seccion`/`subseccion`/`subtitulo`. |
 | `b1d4e7f20a35` | `hallazgo` agrega seguimiento (`estado`, `accion_correctiva`, `area_responsable_id`, `fecha_cierre`). |
 | `e5f8a1b2c3d4` | `auditoria` agrega `tipo_respuesta` (`semaforo` o `cumplimiento`). |
+| `a6b7c8d9e0f1` | Programación: `frecuencia.dias`, `ejecucion_auditoria.fecha_programada`, tabla `usuario_celula`. |
+| `b1c2d3e4f5a6` | Asignación por rol: tabla `usuario_supervisor` (gerente ↔ supervisores). |

@@ -17,6 +17,7 @@ class EjecucionAuditoria(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     fecha: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    fecha_programada: datetime | None = Field(default=None)
     observaciones: str | None = Field(default=None, max_length=1000)
     estado: str = Field(default="en_proceso", max_length=20)
     auditoria_id: int = Field(foreign_key="auditoria.id")

@@ -492,10 +492,11 @@ class TestHallazgoService:
             estado="abierto",
             area_responsable_id=2,
             solo_usuario_id=7,
+            areas_ids=None,
         )
 
     def test_listar_gestion_ve_todos(self):
-        """Supervisor/Gerente/Admin consultan todos los hallazgos."""
+        """Supervisor/Gerente consultan según sus áreas; Admin todas."""
         usuario = _usuario(id_=7, rol_nombre="Supervisor")
 
         with patch.object(
@@ -507,6 +508,7 @@ class TestHallazgoService:
             estado=None,
             area_responsable_id=None,
             solo_usuario_id=None,
+            areas_ids=[-1],  # sin áreas asignadas → no ve nada
         )
 
     def _configurar_para_seguimiento(self, usuario_id: int = 1):

@@ -98,12 +98,12 @@ function formatearFecha(iso: string): string {
   return `${dia}/${mes}/${anio} ${hh}:${mm}`
 }
 
-function estadoLabel(estado: string): string {
-  return estado === 'finalizada' ? 'Finalizada' : 'En progreso'
-}
-
-function esFinalizada(estado: string): boolean {
-  return estado === 'finalizada'
+function estadoInfo(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | null) {
+  if (!e) return { label: '', cls: '' }
+  if (e.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
+  if (e.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
+  if (e.estado === 'finalizada') return { label: 'Finalizada', cls: 'badge-finalizada' }
+  return { label: 'En progreso', cls: 'badge-progreso' }
 }
 
 async function abrirDetalle(e: EjecucionAuditoriaListItem) {
@@ -310,9 +310,9 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
             <td>
               <span
                 class="badge"
-                :class="esFinalizada(e.estado) ? 'badge-finalizada' : 'badge-progreso'"
+                :class="estadoInfo(e).cls"
               >
-                {{ estadoLabel(e.estado) }}
+                {{ estadoInfo(e).label }}
               </span>
             </td>
             <td class="col-acciones">
@@ -363,13 +363,9 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
                 <strong>Estado:</strong>
                 <span
                   class="badge"
-                  :class="
-                    esFinalizada(detalle.estado)
-                      ? 'badge-finalizada'
-                      : 'badge-progreso'
-                  "
+                  :class="estadoInfo(detalle).cls"
                 >
-                  {{ estadoLabel(detalle.estado) }}
+                  {{ estadoInfo(detalle).label }}
                 </span>
               </p>
               <p v-if="detalle.observaciones">

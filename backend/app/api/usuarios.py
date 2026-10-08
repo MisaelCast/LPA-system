@@ -6,7 +6,14 @@ from sqlmodel import Session
 from app.auth.permissions import require_roles
 from app.db.database import get_session
 from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate, UsuarioEstadoUpdate, UsuarioRead, UsuarioUpdate
+from app.schemas.usuario import (
+    AsignacionRead,
+    AsignacionUpdate,
+    UsuarioCreate,
+    UsuarioEstadoUpdate,
+    UsuarioRead,
+    UsuarioUpdate,
+)
 from app.services.usuario_service import UsuarioService
 
 router = APIRouter(tags=["usuarios"])
@@ -24,6 +31,36 @@ def listar_usuarios(
     Solo accesible por usuarios con rol **Administrador**.
     """
     return UsuarioService(session).listar(skip=skip, limit=limit)
+
+
+@router.get("/usuarios/asignacion-opciones")
+def opciones_asignacion(
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> dict:
+    """Devuelve áreas, células y supervisores para el formulario de asignación."""
+    from sqlmodel import select
+
+    from app.models.rol import Rol
+    from app.models.usuario import Usuario as UsuarioModel
+    from app.services.area_service import AreaService
+    from app.services.celula_service import CelulaService
+
+    areas = AreaService(session).listar_activas()
+    celulas = CelulaService(session).listar_todas()
+    supervisores = list(
+        session.exec(
+            select(UsuarioModel)
+            .join(Rol, UsuarioModel.rol_id == Rol.id)
+            .where(Rol.nombre == "Supervisor", UsuarioModel.activo == True)  # noqa: E712
+            .order_by(UsuarioModel.nombre)
+        ).all()
+    )
+    return {
+        "areas": areas,
+        "celulas": celulas,
+        "supervisores": supervisores,
+    }
 
 
 @router.get("/usuarios/{usuario_id}", response_model=UsuarioRead)
@@ -44,6 +81,47 @@ def obtener_usuario(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(error),
         )
+
+
+@router.get("/usuarios/{usuario_id}/asignacion", response_model=AsignacionRead)
+def obtener_asignacion_usuario(
+    usuario_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> dict:
+    """Devuelve las áreas y células asignadas a un usuario."""
+    service = UsuarioService(session)
+    try:
+        return service.obtener_asignacion(usuario_id)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(error),
+        )
+
+
+@router.put("/usuarios/{usuario_id}/asignacion", response_model=AsignacionRead)
+def asignar_usuario(
+    usuario_id: int,
+    datos: AsignacionUpdate,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(require_roles("Administrador")),
+) -> dict:
+    """Asigna áreas, células y/o supervisores a cargo de un usuario según su rol."""
+    service = UsuarioService(session)
+    try:
+        service.asignar(
+            usuario_id,
+            datos.area_ids,
+            datos.celula_ids,
+            datos.supervisor_ids,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(error),
+        )
+    return service.obtener_asignacion(usuario_id)
 
 
 @router.patch("/usuarios/{usuario_id}/estado", response_model=UsuarioRead)

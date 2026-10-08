@@ -11,6 +11,7 @@ import {
   obtenerEjecucion,
   guardarRespuestas,
   finalizarEjecucion,
+  iniciarPendiente,
 } from '@/services/ejecucion.service'
 import {
   crearHallazgo,
@@ -44,6 +45,22 @@ const respondidos = computed(() =>
 )
 const total = computed(() => criterios.value.length)
 const finalizada = computed(() => ejecucion.value?.estado === 'finalizada')
+const esPendiente = computed(() => ejecucion.value?.estado === 'pendiente')
+const bloqueado = computed(() => finalizada.value || esPendiente.value)
+
+async function iniciarPendienteLocal() {
+  if (!ejecucion.value) return
+  limpiarMensajes()
+  cargando.value = true
+  try {
+    ejecucion.value = await iniciarPendiente(ejecucion.value.id)
+    sincronizarBorradorHallazgos()
+  } catch (err) {
+    mostrarError('Error al iniciar la ejecución programada', err)
+  } finally {
+    cargando.value = false
+  }
+}
 
 function esCumplimiento(): boolean {
   return ejecucion.value?.tipo_respuesta === 'cumplimiento'
@@ -440,13 +457,26 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
         <div class="ejecucion-head-row">
           <h2>{{ ejecucion.auditoria_nombre }}</h2>
           <span v-if="finalizada" class="estado-final">FINALIZADA</span>
+          <span v-else-if="esPendiente" class="estado-pendiente">PENDIENTE</span>
         </div>
         <div class="ejecucion-meta">
           <span v-if="ejecucion.celula_numero">Célula {{ ejecucion.celula_numero }}</span>
           <span v-if="ejecucion.area_nombre">· {{ ejecucion.area_nombre }}</span>
           <span>· {{ ejecucion.auditor_nombre }}</span>
         </div>
-        <div class="progreso">
+        <div v-if="esPendiente" class="pendiente-aviso">
+          <p>
+            Esta es una auditoría programada. Iníciala para responder los criterios.
+          </p>
+          <button
+            class="btn primary"
+            :disabled="cargando"
+            @click="iniciarPendienteLocal"
+          >
+            {{ cargando ? 'Iniciando…' : 'Iniciar auditoría' }}
+          </button>
+        </div>
+        <div v-else class="progreso">
           <div class="progreso-info">
             <span class="progreso-label">Progreso</span>
             <span class="progreso-num" data-num>{{ respondidos }}/{{ total }}</span>
@@ -486,7 +516,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                   :key="op.valor"
                   class="chip-btn"
                   :class="[op.css, { activo: fila.criterio.respuesta_valor === op.valor }]"
-                  :disabled="finalizada"
+                  :disabled="bloqueado"
                   @click="seleccionarValor(fila.criterio, op.valor)"
                 >{{ op.label }}</button>
                 <span
@@ -571,12 +601,12 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
       <div class="acciones">
         <button
           class="btn"
-          :disabled="cargando || finalizada"
+          :disabled="cargando || bloqueado"
           @click="guardar"
         >Guardar</button>
         <button
           class="btn primary"
-          :disabled="cargando || respondidos < total || finalizada"
+          :disabled="cargando || respondidos < total || bloqueado"
           @click="finalizar"
         >Finalizar Auditoría</button>
       </div>
@@ -676,6 +706,33 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+.estado-pendiente {
+  color: var(--c-warn, #d97706);
+  font-weight: 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.pendiente-aviso {
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.95rem;
+  border-radius: var(--r-md, 10px);
+  background: var(--c-warn-soft, #fef3c7);
+  border: 1px solid #fcd34d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pendiente-aviso p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--c-warn-ink, #92400e);
 }
 
 .ejecucion-meta {

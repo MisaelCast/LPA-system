@@ -84,3 +84,17 @@ export function obtenerOpcionesFiltrosRevision(): Promise<OpcionesFiltrosRevisio
     .get<OpcionesFiltrosRevision>('/ejecuciones-auditoria/filtros')
     .then((res) => res.data)
 }
+
+export function listarPendientes(): Promise<EjecucionAuditoriaListItem[]> {
+  return api
+    .get<EjecucionAuditoriaListItem[]>('/ejecuciones-auditoria/pendientes')
+    .then((res) => res.data)
+}
+
+export function iniciarPendiente(ejecucionId: number): Promise<EjecucionAuditoria> {
+  return api
+    .post<EjecucionAuditoria>(
+      `/ejecuciones-auditoria/pendientes/${ejecucionId}/iniciar`,
+    )
+    .then((res) => res.data)
+}

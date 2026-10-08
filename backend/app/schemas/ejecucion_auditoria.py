@@ -57,6 +57,10 @@ class EjecucionAuditoriaRead(EjecucionAuditoriaBase):
     celula_numero: int | None = None
     auditor_nombre: str = ""
     tipo_respuesta: str = "semaforo"
+    fecha_programada: datetime | None = None
+    fecha_limite: datetime | None = None
+    programada: bool = False
+    vencida: bool = False
     criterios: list[CriterioRespuesta] = []
 
 
@@ -91,6 +95,10 @@ class EjecucionAuditoriaListItem(SQLModel):
     area_id: int | None = None
     area_nombre: str | None = None
     tipo_respuesta: str = "semaforo"
+    fecha_programada: datetime | None = None
+    fecha_limite: datetime | None = None
+    programada: bool = False
+    vencida: bool = False
     resumen: EjecucionResumen = EjecucionResumen()
 
 

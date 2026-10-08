@@ -106,8 +106,12 @@ function formatearFecha(iso: string): string {
   return `${dia}/${mes}/${anio}`
 }
 
-function estadoLabel(estado: string): string {
-  return estado === 'finalizada' ? 'Finalizada' : 'En progreso'
+function estadoInfo(e: EjecucionAuditoriaListItem | null) {
+  if (!e) return { label: '', cls: '' }
+  if (e.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
+  if (e.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
+  if (e.estado === 'finalizada') return { label: 'Finalizada', cls: 'badge-finalizada' }
+  return { label: 'En progreso', cls: 'badge-progreso' }
 }
 
 function esFinalizada(estado: string): boolean {
@@ -254,9 +258,9 @@ function esCumplimiento(e: EjecucionAuditoriaListItem): boolean {
                 <td>
                   <span
                     class="badge"
-                    :class="esFinalizada(e.estado) ? 'badge-finalizada' : 'badge-progreso'"
+                    :class="estadoInfo(e).cls"
                   >
-                    {{ estadoLabel(e.estado) }}
+                    {{ estadoInfo(e).label }}
                   </span>
                 </td>
                 <td class="col-acciones">

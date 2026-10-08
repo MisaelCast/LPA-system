@@ -20,6 +20,10 @@ class CelulaService:
         """Obtiene un listado paginado de celulas de un area."""
         return self._repo.listar_por_area(area_id, skip=skip, limit=limit)
 
+    def listar_todas(self) -> list[Celula]:
+        """Obtiene todas las células activas ordenadas."""
+        return self._repo.listar_todas()
+
     def obtener_por_id(self, celula_id: int) -> Celula:
         """Busca una celula por su identificador.
 

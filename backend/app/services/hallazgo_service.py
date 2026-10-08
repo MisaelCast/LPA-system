@@ -274,13 +274,23 @@ class HallazgoService:
         """Lista hallazgos segun el rol del usuario.
 
         Un Auditor solo ve los hallazgos de sus propias ejecuciones;
-        Supervisor/Gerente/Administrador ven todos.
+        Supervisor/Gerente ven solo los de sus áreas asignadas y
+        Administrador ve todos.
         """
         solo_usuario_id = None if self._es_gestion(usuario) else usuario.id
+
+        areas_ids: list[int] | None = None
+        rol = self._rol(usuario)
+        if rol in ("Supervisor", "Gerente"):
+            areas_ids = [a.id for a in usuario.areas]
+            if not areas_ids:
+                areas_ids = [-1]  # sin áreas asignadas → no ve nada
+
         hallazgos = self._repo.listar(
             estado=estado,
             area_responsable_id=area_responsable_id,
             solo_usuario_id=solo_usuario_id,
+            areas_ids=areas_ids,
         )
         return [self._enriquecer(h) for h in hallazgos]
 

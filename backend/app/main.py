@@ -1,9 +1,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -28,7 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # seed nunca corra contra un esquema desactualizado.
     _aplicar_migraciones()
     seed_inicial()
+    _scheduler = _iniciar_scheduler()
     yield
+    _scheduler.shutdown(wait=False)
 
 
 def _aplicar_migraciones() -> None:
@@ -41,6 +46,29 @@ def _aplicar_migraciones() -> None:
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option("script_location", str(backend_dir / "migrations"))
     command.upgrade(config, "head")
+
+
+def _iniciar_scheduler() -> BackgroundScheduler:
+    """Inicia APScheduler y genera las pendientes del periodo vigente.
+
+    Ejecuta una corrida inmediata al arrancar y una diaria a las 00:05 UTC.
+    Es idempotente, por lo que no duplica ejecuciones al reiniciar.
+    """
+    from app.db.database import SessionLocal
+    from app.services.programacion_service import generar_pendientes
+
+    def _tarea() -> None:
+        with SessionLocal() as session:
+            generar_pendientes(session)
+
+    scheduler = BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(_tarea, CronTrigger(hour=0, minute=5), id="generar_pendientes")
+    scheduler.start()
+    try:
+        _tarea()
+    except Exception as exc:  # pragma: no cover - no debe tumbar la API
+        print("ADVERTENCIA: no se pudieron generar las pendientes:", exc)
+    return scheduler
 
 
 app = FastAPI(

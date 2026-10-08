@@ -3,6 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useUsuariosStore } from '@/stores/usuarios'
 import { useAuthStore } from '@/stores/auth'
 import { obtenerRoles } from '@/services/rol.service'
+import {
+  guardarAsignacion,
+  obtenerAsignacion,
+  obtenerAsignacionOpciones,
+} from '@/services/asignacion.service'
+import type { AsignacionOpciones } from '@/types/asignacion'
 import type { Usuario } from '@/types/auth'
 import type { Rol } from '@/types/rol'
 
@@ -10,6 +16,7 @@ const store = useUsuariosStore()
 const authStore = useAuthStore()
 
 const roles = ref<Rol[]>([])
+const asignacionOpciones = ref<AsignacionOpciones | null>(null)
 const busqueda = ref('')
 
 const modalCrearAbierto = ref(false)
@@ -19,6 +26,9 @@ const formNombre = ref('')
 const formCorreo = ref('')
 const formContrasena = ref('')
 const formRolId = ref(0)
+const formAreasIds = ref<number[]>([])
+const formCelulasIds = ref<number[]>([])
+const formSupervisorIds = ref<number[]>([])
 const formError = ref('')
 const formGuardando = ref(false)
 
@@ -33,6 +43,11 @@ let toastId = 0
 onMounted(async () => {
   store.cargarUsuarios()
   roles.value = await obtenerRoles()
+  try {
+    asignacionOpciones.value = await obtenerAsignacionOpciones()
+  } catch {
+    asignacionOpciones.value = null
+  }
 })
 
 const usuariosFiltrados = computed(() => {
@@ -47,6 +62,72 @@ const usuariosFiltrados = computed(() => {
 
 const totalUsuarios = computed(() => store.usuarios.length)
 const usuariosActivos = computed(() => store.usuarios.filter((u) => u.activo).length)
+
+const rolSeleccionado = computed(() =>
+  roles.value.find((r) => r.id === formRolId.value),
+)
+
+const esAuditor = computed(() => rolSeleccionado.value?.nombre === 'Auditor')
+const esSupervisor = computed(() => rolSeleccionado.value?.nombre === 'Supervisor')
+const esGerente = computed(() => rolSeleccionado.value?.nombre === 'Gerente')
+
+const esRolAsignable = computed(() => esAuditor.value || esSupervisor.value || esGerente.value)
+
+const areasDisponibles = computed(() => asignacionOpciones.value?.areas || [])
+const celulasDisponibles = computed(() => asignacionOpciones.value?.celulas || [])
+const supervisoresDisponibles = computed(
+  () => asignacionOpciones.value?.supervisores || [],
+)
+
+const areasSeleccionadas = computed(() =>
+  areasDisponibles.value.filter((a) => formAreasIds.value.includes(a.id)),
+)
+
+function celulasDeArea(areaId: number) {
+  return celulasDisponibles.value.filter((c) => c.area_id === areaId)
+}
+
+function todasCelulasDeArea(areaId: number): boolean {
+  return !celulasDeArea(areaId).some((c) => formCelulasIds.value.includes(c.id))
+}
+
+function toggleTodasCelulasArea(areaId: number, event: Event) {
+  const activar = (event.target as HTMLInputElement).checked
+  const ids = celulasDeArea(areaId).map((c) => c.id)
+  if (activar) {
+    // "Todas": sin marcas explícitas en esa área.
+    formCelulasIds.value = formCelulasIds.value.filter((id) => !ids.includes(id))
+  } else {
+    // Desmarcar "todas" => marca cada célula del área explícitamente.
+    formCelulasIds.value = [...new Set([...formCelulasIds.value, ...ids])]
+  }
+}
+
+function onAreasChange() {
+  const celulasValidas = celulasDisponibles.value
+    .filter((c) => formAreasIds.value.includes(c.area_id))
+    .map((c) => c.id)
+  formCelulasIds.value = formCelulasIds.value.filter((id) =>
+    celulasValidas.includes(id),
+  )
+}
+
+function asignacionPayload() {
+  if (esAuditor.value) {
+    return {
+      area_ids: formAreasIds.value,
+      celula_ids: formCelulasIds.value,
+      supervisor_ids: [],
+    }
+  }
+  if (esSupervisor.value) {
+    return { area_ids: formAreasIds.value, celula_ids: [], supervisor_ids: [] }
+  }
+  if (esGerente.value) {
+    return { area_ids: [], celula_ids: [], supervisor_ids: formSupervisorIds.value }
+  }
+  return { area_ids: [], celula_ids: [], supervisor_ids: [] }
+}
 
 function mostrarToast(tipo: Toast['tipo'], texto: string) {
   const id = ++toastId
@@ -75,6 +156,9 @@ function abrirModalCrear() {
   formCorreo.value = ''
   formContrasena.value = ''
   formRolId.value = 0
+  formAreasIds.value = []
+  formCelulasIds.value = []
+  formSupervisorIds.value = []
   formError.value = ''
   modalCrearAbierto.value = true
 }
@@ -92,13 +176,16 @@ async function confirmarCrear() {
   }
   formGuardando.value = true
   try {
-    await store.crear({
+    const creado = await store.crear({
       nombre: formNombre.value.trim(),
       correo: formCorreo.value.trim(),
       contrasena: formContrasena.value,
       rol_id: formRolId.value,
       activo: true,
     })
+    if (esRolAsignable.value) {
+      await guardarAsignacion(creado.id, asignacionPayload())
+    }
     mostrarToast('ok', `Usuario "${formNombre.value.trim()}" creado.`)
     modalCrearAbierto.value = false
   } catch (err) {
@@ -109,12 +196,27 @@ async function confirmarCrear() {
 }
 
 /* ——— Modal editar ——— */
-function abrirModalEditar(u: Usuario) {
+async function abrirModalEditar(u: Usuario) {
   usuarioEditando.value = u
   formNombre.value = u.nombre
   formCorreo.value = u.correo
   formRolId.value = u.rol_id
+  formAreasIds.value = []
+  formCelulasIds.value = []
+  formSupervisorIds.value = []
   formError.value = ''
+  if (['Auditor', 'Supervisor', 'Gerente'].includes(u.rol_nombre)) {
+    try {
+      const asignacion = await obtenerAsignacion(u.id)
+      formAreasIds.value = asignacion.area_ids
+      formCelulasIds.value = asignacion.celula_ids
+      formSupervisorIds.value = asignacion.supervisor_ids
+    } catch {
+      formAreasIds.value = []
+      formCelulasIds.value = []
+      formSupervisorIds.value = []
+    }
+  }
   modalEditarAbierto.value = true
 }
 
@@ -138,6 +240,9 @@ async function confirmarEditar() {
       correo: formCorreo.value.trim(),
       rol_id: formRolId.value,
     })
+    if (esRolAsignable.value) {
+      await guardarAsignacion(usuarioEditando.value.id, asignacionPayload())
+    }
     mostrarToast('ok', 'Usuario actualizado.')
     modalEditarAbierto.value = false
     usuarioEditando.value = null
@@ -355,6 +460,67 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
             </select>
           </label>
+          <div v-if="esRolAsignable" class="asignacion-section">
+            <span class="asignacion-titulo">
+              {{ esGerente ? 'Supervisores a cargo' : 'Áreas a cargo' }}
+            </span>
+
+            <template v-if="esGerente">
+              <div class="supervisores-checks">
+                <label class="check" v-for="s in supervisoresDisponibles" :key="s.id">
+                  <input type="checkbox" :value="s.id" v-model="formSupervisorIds" />
+                  <span>{{ s.nombre }}</span>
+                </label>
+              </div>
+              <p class="asignacion-hint">
+                Selecciona los supervisores que reportan a este gerente.
+              </p>
+            </template>
+
+            <template v-else>
+              <div class="areas-checks">
+                <label class="check" v-for="a in areasDisponibles" :key="a.id">
+                  <input
+                    type="checkbox"
+                    :value="a.id"
+                    v-model="formAreasIds"
+                    @change="onAreasChange"
+                  />
+                  <span>{{ a.nombre }}</span>
+                </label>
+              </div>
+
+              <template v-if="esAuditor">
+                <div
+                  v-for="a in areasSeleccionadas"
+                  :key="'cel-' + a.id"
+                  class="celulas-area"
+                >
+                  <strong>Células de {{ a.nombre }}</strong>
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      :checked="todasCelulasDeArea(a.id)"
+                      @change="toggleTodasCelulasArea(a.id, $event)"
+                    />
+                    <span>Todas las del área</span>
+                  </label>
+                  <div class="celulas-grid">
+                    <label class="check" v-for="c in celulasDeArea(a.id)" :key="c.id">
+                      <input type="checkbox" :value="c.id" v-model="formCelulasIds" />
+                      <span>Célula {{ c.numero }}</span>
+                    </label>
+                  </div>
+                </div>
+              </template>
+
+              <p class="asignacion-hint">
+                {{ esAuditor
+                  ? 'Si un área queda sin células marcadas, el auditor cubre todas sus células.'
+                  : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
+              </p>
+            </template>
+          </div>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -398,6 +564,67 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
             </select>
           </label>
+          <div v-if="esRolAsignable" class="asignacion-section">
+            <span class="asignacion-titulo">
+              {{ esGerente ? 'Supervisores a cargo' : 'Áreas a cargo' }}
+            </span>
+
+            <template v-if="esGerente">
+              <div class="supervisores-checks">
+                <label class="check" v-for="s in supervisoresDisponibles" :key="s.id">
+                  <input type="checkbox" :value="s.id" v-model="formSupervisorIds" />
+                  <span>{{ s.nombre }}</span>
+                </label>
+              </div>
+              <p class="asignacion-hint">
+                Selecciona los supervisores que reportan a este gerente.
+              </p>
+            </template>
+
+            <template v-else>
+              <div class="areas-checks">
+                <label class="check" v-for="a in areasDisponibles" :key="a.id">
+                  <input
+                    type="checkbox"
+                    :value="a.id"
+                    v-model="formAreasIds"
+                    @change="onAreasChange"
+                  />
+                  <span>{{ a.nombre }}</span>
+                </label>
+              </div>
+
+              <template v-if="esAuditor">
+                <div
+                  v-for="a in areasSeleccionadas"
+                  :key="'cel-' + a.id"
+                  class="celulas-area"
+                >
+                  <strong>Células de {{ a.nombre }}</strong>
+                  <label class="check">
+                    <input
+                      type="checkbox"
+                      :checked="todasCelulasDeArea(a.id)"
+                      @change="toggleTodasCelulasArea(a.id, $event)"
+                    />
+                    <span>Todas las del área</span>
+                  </label>
+                  <div class="celulas-grid">
+                    <label class="check" v-for="c in celulasDeArea(a.id)" :key="c.id">
+                      <input type="checkbox" :value="c.id" v-model="formCelulasIds" />
+                      <span>Célula {{ c.numero }}</span>
+                    </label>
+                  </div>
+                </div>
+              </template>
+
+              <p class="asignacion-hint">
+                {{ esAuditor
+                  ? 'Si un área queda sin células marcadas, el auditor cubre todas sus células.'
+                  : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
+              </p>
+            </template>
+          </div>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -799,7 +1026,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .modal {
   background: #fff;
   border-radius: 0.75rem;
-  width: min(440px, calc(100% - 2rem));
+  width: min(560px, calc(100% - 2rem));
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
   display: flex;
   flex-direction: column;
@@ -902,6 +1129,75 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   color: #dc2626;
   font-size: 0.85rem;
   border: 1px solid #fecaca;
+}
+
+/* --- Asignación áreas/células --- */
+.asignacion-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.85rem;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.asignacion-titulo {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.areas-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.supervisores-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: #2563eb;
+}
+
+.celulas-area {
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.celulas-area strong {
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.celulas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.3rem;
+}
+
+.asignacion-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 /* --- Toasts --- */

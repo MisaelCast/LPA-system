@@ -55,3 +55,19 @@ class UsuarioEstadoUpdate(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
     activo: bool
+
+
+class AsignacionUpdate(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    area_ids: list[int] = []
+    celula_ids: list[int] = []
+    supervisor_ids: list[int] = []
+
+
+class AsignacionRead(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    area_ids: list[int] = []
+    celula_ids: list[int] = []
+    supervisor_ids: list[int] = []
