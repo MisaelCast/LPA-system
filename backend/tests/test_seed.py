@@ -208,8 +208,15 @@ class TestSeedAuditoriaPulido:
             select(Auditoria).where(Auditoria.nombre == _AUDITORIA_PULIDO_NOMBRE)
         ).first()
 
+        from app.models.celula import Celula
+
+        celula = Celula(numero=1, activa=True, area_id=auditoria.area_id)
+        session.add(celula)
+        session.commit()
+        session.refresh(celula)
+
         service = EjecucionAuditoriaService(session)
-        ejecucion = service.iniciar(auditoria.id, usuario, celula_id=None)
+        ejecucion = service.iniciar(auditoria.id, usuario, celula_id=celula.id)
         ejecucion = service.obtener_por_id(ejecucion.id)
 
         leido = EjecucionAuditoriaRead.model_validate(ejecucion, from_attributes=True)

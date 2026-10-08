@@ -54,13 +54,15 @@ def _a_http_error(error: ValueError) -> HTTPException:
 def listar_hallazgos(
     estado: str | None = Query(default=None),
     area_responsable_id: int | None = Query(default=None),
+    solo_propios: bool = Query(default=False),
+    solo_auditores: bool = Query(default=False),
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
     """Lista hallazgos con filtros opcionales.
 
-    Un Auditor solo ve los hallazgos de sus propias ejecuciones;
-    Supervisor/Gerente/Administrador ven todos.
+    ``solo_propios`` devuelve solo los hallazgos del usuario autenticado;
+    ``solo_auditores`` devuelve los de la capa inferior (auditores).
     """
     service = HallazgoService(session)
     try:
@@ -68,6 +70,8 @@ def listar_hallazgos(
             usuario,
             estado=estado,
             area_responsable_id=area_responsable_id,
+            solo_propios=solo_propios,
+            solo_auditores=solo_auditores,
         )
     except ValueError as error:
         raise _a_http_error(error)

@@ -598,6 +598,35 @@ textarea {
   color: var(--c-danger-ink);
 }
 
+.badge-no-elaborada {
+  background: var(--c-surface-3);
+  color: var(--c-ink-3);
+  border: 1px dashed var(--c-line-2);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--c-ink-3);
+}
+
+.badge-bloqueada {
+  background: var(--c-surface-3);
+  color: var(--c-ink-4);
+}
+
+.badge-disponible {
+  background: var(--c-ok-soft);
+  color: var(--c-ok-ink);
+}
+
+.badge-atrasada {
+  background: var(--c-danger-soft);
+  color: var(--c-danger-ink);
+}
+
+.badge-en-progreso {
+  background: var(--c-warn-soft);
+  color: var(--c-warn-ink);
+}
+
 .chip-v,
 .chip-a,
 .chip-r,

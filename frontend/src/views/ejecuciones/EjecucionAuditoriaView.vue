@@ -46,7 +46,9 @@ const respondidos = computed(() =>
 const total = computed(() => criterios.value.length)
 const finalizada = computed(() => ejecucion.value?.estado === 'finalizada')
 const esPendiente = computed(() => ejecucion.value?.estado === 'pendiente')
-const bloqueado = computed(() => finalizada.value || esPendiente.value)
+const noElaborada = computed(() => ejecucion.value?.estado === 'no_elaborada')
+const soloLectura = computed(() => finalizada.value || noElaborada.value)
+const bloqueado = computed(() => soloLectura.value || esPendiente.value)
 
 async function iniciarPendienteLocal() {
   if (!ejecucion.value) return
@@ -167,7 +169,7 @@ async function cargarEjecucionExistente(id: number) {
 function seleccionarAuditoria(auditoria: Auditoria) {
   limpiarMensajes()
   auditoriaSeleccionada.value = auditoria
-  if (auditoria.tipo_respuesta === 'cumplimiento') {
+  if (!auditoria.requiere_celula) {
     iniciar(null)
     return
   }
@@ -214,10 +216,11 @@ function sincronizarBorradorHallazgos() {
 }
 
 async function seleccionarValor(criterio: CriterioRespuesta, valor: string) {
+  if (soloLectura.value) return
   criterio.respuesta_valor = criterio.respuesta_valor === valor ? null : valor
   if (valorEsNoHallazgo(criterio.respuesta_valor)) {
     criterio.respuesta_observaciones = null
-    if (criterio.hallazgo_id !== null && !finalizada.value) {
+    if (criterio.hallazgo_id !== null && !soloLectura.value) {
       await quitarHallazgo(criterio)
     }
     return
@@ -256,9 +259,9 @@ async function persistirRespuestasPendientes(): Promise<void> {
 }
 
 async function guardarHallazgo(criterio: CriterioRespuesta) {
-  if (finalizada.value) {
+  if (soloLectura.value) {
     hallazgosError.value[criterio.id] =
-      'La ejecución está finalizada, no se pueden modificar hallazgos.'
+      'La ejecución está cerrada, no se pueden modificar hallazgos.'
     return
   }
   const descripcion = (hallazgosInputs.value[criterio.id] ?? '').trim()
@@ -457,6 +460,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
         <div class="ejecucion-head-row">
           <h2>{{ ejecucion.auditoria_nombre }}</h2>
           <span v-if="finalizada" class="estado-final">FINALIZADA</span>
+          <span v-else-if="noElaborada" class="estado-no-elaborada">NO ELABORADA</span>
           <span v-else-if="esPendiente" class="estado-pendiente">PENDIENTE</span>
         </div>
         <div class="ejecucion-meta">
@@ -539,7 +543,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                   <select
                     v-model.number="hallazgosAreas[fila.criterio.id]"
                     class="input"
-                    :disabled="finalizada"
+                    :disabled="soloLectura"
                   >
                     <option :value="null" disabled>Seleccione el área responsable</option>
                     <option v-for="a in areas" :key="a.id" :value="a.id">
@@ -552,12 +556,12 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                   class="input hallazgo-input"
                   rows="3"
                   placeholder="Describe el hallazgo detectado..."
-                  :disabled="finalizada"
+                  :disabled="soloLectura"
                 ></textarea>
                 <div class="hallazgo-acciones">
                   <button
                     class="btn small"
-                    :disabled="finalizada || hallazgosGuardando[fila.criterio.id]"
+                    :disabled="soloLectura || hallazgosGuardando[fila.criterio.id]"
                     @click="guardarHallazgo(fila.criterio)"
                   >
                     {{
@@ -567,7 +571,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                     }}
                   </button>
                   <button
-                    v-if="fila.criterio.hallazgo_id && !finalizada"
+                    v-if="fila.criterio.hallazgo_id && !soloLectura"
                     class="btn small danger"
                     @click="quitarHallazgo(fila.criterio)"
                   >
@@ -591,7 +595,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                 class="input"
                 placeholder="Observaciones..."
                 type="text"
-                :disabled="finalizada"
+                :disabled="soloLectura"
               />
             </div>
           </div>
@@ -714,6 +718,16 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   font-size: 0.75rem;
   letter-spacing: 0.05em;
   white-space: nowrap;
+}
+
+.estado-no-elaborada {
+  color: var(--c-ink-3, #64748b);
+  font-weight: 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .pendiente-aviso {

@@ -50,6 +50,7 @@ _AUDITORIA_VERIFICACION_DESCRIPCION = (
     "Verificación semanal del trabajo del Auditor (meta-auditoría)."
 )
 _AUDITORIA_VERIFICACION_TIPO_RESPUESTA = "cumplimiento"
+_AUDITORIA_VERIFICACION_DIA_SEMANA = 4  # viernes (0=Lunes..6=Domingo)
 
 _CRITERIOS_VERIFICACION_SUPERVISOR = [
     "El Auditor completó el 100% de las auditorías programadas del periodo "
@@ -343,8 +344,16 @@ def _seed_capas(session: Session) -> None:
     for nombre in _CAPAS_INICIALES:
         existente = session.exec(select(Capa).where(Capa.nombre == nombre)).first()
         if existente is None:
-            capa = Capa(nombre=nombre, descripcion=f"Capa de {nombre.lower()}", activa=True)
+            capa = Capa(
+                nombre=nombre,
+                descripcion=f"Capa de {nombre.lower()}",
+                activa=True,
+                requiere_celula=nombre != "Supervisor",
+            )
             session.add(capa)
+        elif (nombre == "Supervisor") and existente.requiere_celula:
+            existente.requiere_celula = False
+            session.add(existente)
 
     session.commit()
 
@@ -529,6 +538,7 @@ def _seed_auditoria_verificacion_supervisor(session: Session) -> None:
                 descripcion=_AUDITORIA_VERIFICACION_DESCRIPCION,
                 activa=True,
                 tipo_respuesta=_AUDITORIA_VERIFICACION_TIPO_RESPUESTA,
+                dia_semana=_AUDITORIA_VERIFICACION_DIA_SEMANA,
                 capa_id=capa.id,
                 frecuencia_id=frecuencia.id,
                 area_id=area.id,
@@ -537,6 +547,10 @@ def _seed_auditoria_verificacion_supervisor(session: Session) -> None:
             session.flush()
         elif auditoria.tipo_respuesta != _AUDITORIA_VERIFICACION_TIPO_RESPUESTA:
             auditoria.tipo_respuesta = _AUDITORIA_VERIFICACION_TIPO_RESPUESTA
+            session.add(auditoria)
+
+        if auditoria.dia_semana != _AUDITORIA_VERIFICACION_DIA_SEMANA:
+            auditoria.dia_semana = _AUDITORIA_VERIFICACION_DIA_SEMANA
             session.add(auditoria)
 
         for i, descripcion in enumerate(_CRITERIOS_VERIFICACION_SUPERVISOR, start=1):

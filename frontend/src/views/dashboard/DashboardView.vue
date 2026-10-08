@@ -109,6 +109,7 @@ function formatearFecha(iso: string): string {
 function estadoInfo(e: EjecucionAuditoriaListItem | null) {
   if (!e) return { label: '', cls: '' }
   if (e.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
+  if (e.estado === 'no_elaborada') return { label: 'No elaborada', cls: 'badge-no-elaborada' }
   if (e.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
   if (e.estado === 'finalizada') return { label: 'Finalizada', cls: 'badge-finalizada' }
   return { label: 'En progreso', cls: 'badge-progreso' }

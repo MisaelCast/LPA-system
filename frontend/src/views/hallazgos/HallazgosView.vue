@@ -69,6 +69,7 @@ async function cargar() {
     const filtros: HallazgoFiltros = {}
     if (fEstado.value) filtros.estado = fEstado.value
     if (fAreaId.value) filtros.area_responsable_id = fAreaId.value
+    if (authStore.isSupervisor || authStore.isGerente) filtros.solo_propios = true
     hallazgos.value = await listarHallazgos(filtros)
   } catch (err) {
     error.value =
@@ -164,9 +165,9 @@ async function guardarSeguimiento() {
   <div class="page">
     <header class="page-header">
       <div class="page-header-info">
-        <h1>Hallazgos</h1>
+        <h1>Mis hallazgos</h1>
         <p class="subtitle">
-          Seguimiento y cierre de los hallazgos detectados en las auditorías.
+          Hallazgos detectados en tus auditorías y a los que das seguimiento.
         </p>
       </div>
     </header>

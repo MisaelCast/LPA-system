@@ -493,6 +493,7 @@ class TestHallazgoService:
             area_responsable_id=2,
             solo_usuario_id=7,
             areas_ids=None,
+            solo_auditores=False,
         )
 
     def test_listar_gestion_ve_todos(self):
@@ -509,6 +510,7 @@ class TestHallazgoService:
             area_responsable_id=None,
             solo_usuario_id=None,
             areas_ids=[-1],  # sin áreas asignadas → no ve nada
+            solo_auditores=False,
         )
 
     def _configurar_para_seguimiento(self, usuario_id: int = 1):

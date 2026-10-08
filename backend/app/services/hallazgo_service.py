@@ -270,27 +270,46 @@ class HallazgoService:
         usuario: Usuario,
         estado: str | None = None,
         area_responsable_id: int | None = None,
+        solo_propios: bool = False,
+        solo_auditores: bool = False,
     ) -> list[HallazgoDetallado]:
         """Lista hallazgos segun el rol del usuario.
 
-        Un Auditor solo ve los hallazgos de sus propias ejecuciones;
-        Supervisor/Gerente ven solo los de sus áreas asignadas y
-        Administrador ve todos.
-        """
-        solo_usuario_id = None if self._es_gestion(usuario) else usuario.id
+        - ``solo_propios``: solo los hallazgos detectados por el propio usuario
+          (sus auditorías).
+        - ``solo_auditores``: solo hallazgos de la capa inferior (auditores),
+          limitados a las áreas asignadas del Supervisor/Gerente.
 
-        areas_ids: list[int] | None = None
+        Por defecto: un Auditor solo ve sus propios hallazgos; Supervisor/Gerente
+        ven los de sus áreas asignadas y Administrador ve todos.
+        """
         rol = self._rol(usuario)
-        if rol in ("Supervisor", "Gerente"):
-            areas_ids = [a.id for a in usuario.areas]
-            if not areas_ids:
-                areas_ids = [-1]  # sin áreas asignadas → no ve nada
+
+        solo_usuario_id: int | None = None
+        areas_ids: list[int] | None = None
+        solo_aud = False
+
+        if solo_propios:
+            solo_usuario_id = usuario.id
+        elif solo_auditores:
+            solo_aud = True
+            if rol in ("Supervisor", "Gerente"):
+                areas_ids = [a.id for a in usuario.areas]
+                if not areas_ids:
+                    areas_ids = [-1]  # sin áreas asignadas → no ve nada
+        else:
+            solo_usuario_id = None if self._es_gestion(usuario) else usuario.id
+            if rol in ("Supervisor", "Gerente"):
+                areas_ids = [a.id for a in usuario.areas]
+                if not areas_ids:
+                    areas_ids = [-1]
 
         hallazgos = self._repo.listar(
             estado=estado,
             area_responsable_id=area_responsable_id,
             solo_usuario_id=solo_usuario_id,
             areas_ids=areas_ids,
+            solo_auditores=solo_aud,
         )
         return [self._enriquecer(h) for h in hallazgos]
 

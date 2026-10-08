@@ -6,6 +6,7 @@ from sqlmodel import Session, func, select
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.capa import Capa
 from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
@@ -19,6 +20,13 @@ from app.repositories.ejecucion_auditoria_repository import (
     EjecucionAuditoriaRepository,
 )
 from app.repositories.respuesta_repository import RespuestaRepository
+from app.services.programacion_service import (
+    _crear_pendiente,
+    fecha_habilita,
+    marcar_no_elaboradas,
+    periodo_auditoria,
+)
+from app.utils.tiempo import ahora_business
 
 _VALORES_POR_TIPO_RESPUESTA: dict[str, set[str]] = {
     "semaforo": {"V", "A", "R"},
@@ -30,7 +38,19 @@ _ESTADOS_VALIDOS: tuple[str, ...] = (
     "en_proceso",
     "finalizada",
     "vencida",
+    "no_elaborada",
 )
+
+
+class DiaNoHabilitadoError(ValueError):
+    """Se intenta iniciar una auditoría antes de su día habilitado (403)."""
+
+
+class EjecucionAbiertaError(ValueError):
+    """Ya existe una ejecución abierta para el mismo periodo (409)."""
+
+
+_NOMBRES_DIA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 
 class EjecucionAuditoriaService:
@@ -206,12 +226,14 @@ class EjecucionAuditoriaService:
         object.__setattr__(auditoria, "capa_nombre", "")
         object.__setattr__(auditoria, "frecuencia_nombre", "")
         object.__setattr__(auditoria, "area_nombre", None)
+        object.__setattr__(auditoria, "requiere_celula", True)
 
         if auditoria.capa_id is not None:
             from app.models.capa import Capa
             capa = self._session.get(Capa, auditoria.capa_id)
             if capa:
                 object.__setattr__(auditoria, "capa_nombre", capa.nombre)
+                object.__setattr__(auditoria, "requiere_celula", capa.requiere_celula)
 
         if auditoria.frecuencia_id is not None:
             from app.models.frecuencia import Frecuencia
@@ -264,7 +286,18 @@ class EjecucionAuditoriaService:
         if not auditoria.activa:
             raise ValueError("La auditoria no esta activa.")
 
-        if celula_id is not None:
+        capa = (
+            self._session.get(Capa, auditoria.capa_id)
+            if auditoria.capa_id
+            else None
+        )
+        requiere_celula = capa.requiere_celula if capa else True
+
+        if not requiere_celula:
+            celula_id = None  # la capa no requiere célula
+        else:
+            if celula_id is None:
+                raise ValueError("Esta auditoría requiere seleccionar una célula.")
             celula = self._session.get(Celula, celula_id)
             if celula is None:
                 raise ValueError("Celula no encontrada.")
@@ -275,14 +308,68 @@ class EjecucionAuditoriaService:
                     "La celula no pertenece al area de la auditoria."
                 )
 
+        self._validar_habilitacion(auditoria)
+        self._validar_sin_abierta(auditoria, usuario, celula_id)
+
         ejecucion = EjecucionAuditoria(
             fecha=datetime.now(timezone.utc),
+            fecha_programada=periodo_auditoria(
+                auditoria,
+                self._frecuencia_de(auditoria),
+            ),
             estado="en_proceso",
             auditoria_id=auditoria.id,
             usuario_id=usuario.id,
             celula_id=celula_id,
         )
         return self._repo.crear(ejecucion)
+
+    def _frecuencia_de(self, auditoria: Auditoria) -> Frecuencia | None:
+        return (
+            self._session.get(Frecuencia, auditoria.frecuencia_id)
+            if auditoria.frecuencia_id
+            else None
+        )
+
+    def _validar_habilitacion(self, auditoria: Auditoria) -> None:
+        """Rechaza iniciar una auditoría antes de su día habilitado (403)."""
+        if auditoria.dia_semana is None:
+            return
+        frecuencia = self._frecuencia_de(auditoria)
+        habilita = fecha_habilita(auditoria, frecuencia, ahora_business())
+        if habilita is not None and ahora_business() < habilita:
+            dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+            nombre_dia = dias[auditoria.dia_semana]
+            raise DiaNoHabilitadoError(
+                f"Esta auditoría se habilita solo los {nombre_dia}. "
+                f"Se habilita el día {habilita.strftime('%d/%m/%Y')}."
+            )
+
+    def _validar_sin_abierta(
+        self,
+        auditoria: Auditoria,
+        usuario: Usuario,
+        celula_id: int | None,
+        periodo: datetime | None = None,
+        excluir_ejecucion_id: int | None = None,
+    ) -> None:
+        """Rechaza si ya hay una ejecución abierta del mismo periodo (409)."""
+        frecuencia = self._frecuencia_de(auditoria)
+        periodo = periodo or periodo_auditoria(auditoria, frecuencia, ahora_business())
+        query = select(EjecucionAuditoria).where(
+            EjecucionAuditoria.auditoria_id == auditoria.id,
+            EjecucionAuditoria.celula_id == celula_id,
+            EjecucionAuditoria.usuario_id == usuario.id,
+            EjecucionAuditoria.fecha_programada == periodo,
+            EjecucionAuditoria.estado.in_(("pendiente", "en_proceso")),
+        )
+        if excluir_ejecucion_id is not None:
+            query = query.where(EjecucionAuditoria.id != excluir_ejecucion_id)
+        if self._session.exec(query).first() is not None:
+            raise EjecucionAbiertaError(
+                "Ya existe una ejecución abierta de esta auditoría "
+                "para el mismo periodo."
+            )
 
     def obtener_por_id(self, ejecucion_id: int) -> EjecucionAuditoria:
         ejecucion = self._repo.obtener_por_id(ejecucion_id)
@@ -556,29 +643,146 @@ class EjecucionAuditoriaService:
             "resumen": self._resumen_de_respuestas(respuestas, total_criterios),
         }
 
-    def listar_pendientes(self, usuario: Usuario) -> list[dict]:
-        """Lista las ejecuciones programadas del usuario aún sin terminar.
+    def mis_pendientes(self, usuario: Usuario) -> list[dict]:
+        """Lista las auditorías programadas del usuario con su estado.
 
-        Incluye ``pendiente`` (aún no iniciada) y ``en_proceso`` (iniciadas
-        pero no finalizadas), para no perder de vista las que quedaron a
-        medias. Ordena primero las ``pendiente`` y luego las ``en_proceso``.
+        - Diarias (lunes a viernes): se generan por día hábil; la del día se
+          habilita ese día y, si no fue finalizada antes de terminar el día,
+          queda registrada como ``no_elaborada`` y sale la del siguiente día.
+        - Semanales con ``dia_semana``: Bloqueada (antes del día), Disponible
+          (el día) o Atrasada (después); se generan al consultar.
+        - De proceso (sin día): Disponible/Atrasada según periodo y En progreso
+          si iniciadas.
         """
-        ejecuciones = list(
-            self._session.exec(
-                select(EjecucionAuditoria)
-                .where(
+        ahora = ahora_business()
+        marcadas = marcar_no_elaboradas(self._session, ahora)
+        if marcadas:
+            self._session.commit()
+        items: list[dict] = []
+        for auditoria in self.listar_disponibles(usuario):
+            frecuencia = self._frecuencia_de(auditoria)
+            if frecuencia is None:
+                continue
+            if auditoria.tipo_respuesta == "cumplimiento":
+                items.append(
+                    self._pendiente_item(
+                        usuario, auditoria, frecuencia, None, ahora
+                    )
+                )
+            else:
+                for celula in self.obtener_celulas_disponibles(
+                    auditoria.id, usuario
+                ):
+                    items.append(
+                        self._pendiente_item(
+                            usuario, auditoria, frecuencia, celula.id, ahora
+                        )
+                    )
+
+        orden_estado = {
+            "atrasada": 0,
+            "en_progreso": 1,
+            "disponible": 2,
+            "bloqueada": 3,
+        }
+        items.sort(key=lambda i: (orden_estado[i["estado"]], -i["dias"]))
+        return items
+
+    def _pendiente_item(
+        self,
+        usuario: Usuario,
+        auditoria: Auditoria,
+        frecuencia: Frecuencia,
+        celula_id: int | None,
+        ahora: datetime,
+    ) -> dict:
+        area_nombre = None
+        if auditoria.area_id:
+            area = self._session.get(Area, auditoria.area_id)
+            area_nombre = area.nombre if area else None
+        celula_numero = None
+        if celula_id is not None:
+            celula = self._session.get(Celula, celula_id)
+            celula_numero = celula.numero if celula else None
+
+        def _base(estado: str, dias: int, contador: str | None,
+                  ejecucion_id: int | None, accion: str | None,
+                  habilita: datetime | None) -> dict:
+            return {
+                "ejecucion_id": ejecucion_id,
+                "auditoria_id": auditoria.id,
+                "auditoria_nombre": auditoria.nombre,
+                "area_nombre": area_nombre,
+                "celula_numero": celula_numero,
+                "estado": estado,
+                "fecha_habilita": habilita,
+                "contador": contador,
+                "dias": dias,
+                "accion": accion,
+                "tooltip": (
+                    (
+                        f"Se habilita el {_NOMBRES_DIA[auditoria.dia_semana]} "
+                        f"{habilita.strftime('%d/%m/%Y')}."
+                        if auditoria.dia_semana is not None
+                        else f"Se habilita el {habilita.strftime('%d/%m/%Y')}."
+                    )
+                    if habilita is not None
+                    else None
+                ),
+                "requiere_celula": getattr(auditoria, "requiere_celula", True),
+            }
+
+        habilita = fecha_habilita(auditoria, frecuencia, ahora)
+        if habilita is not None:
+            dias_rel = (ahora.date() - habilita.date()).days
+            if dias_rel < 0:
+                faltan = -dias_rel
+                contador = "Mañana" if faltan == 1 else f"Faltan {faltan} días"
+                return _base("bloqueada", -faltan, contador, None, None, habilita)
+
+        periodo = periodo_auditoria(auditoria, frecuencia, ahora)
+        ejecucion = self._session.exec(
+            select(EjecucionAuditoria).where(
+                EjecucionAuditoria.auditoria_id == auditoria.id,
+                EjecucionAuditoria.celula_id == celula_id,
+                EjecucionAuditoria.usuario_id == usuario.id,
+                EjecucionAuditoria.fecha_programada == periodo,
+            )
+        ).first()
+
+        if ejecucion is not None and ejecucion.estado == "en_proceso":
+            return _base("en_progreso", 0, "En progreso",
+                         ejecucion.id, "continuar", habilita)
+
+        if ejecucion is None:
+            _crear_pendiente(
+                self._session, auditoria.id, celula_id, usuario.id, periodo
+            )
+            self._session.commit()
+            ejecucion = self._session.exec(
+                select(EjecucionAuditoria).where(
+                    EjecucionAuditoria.auditoria_id == auditoria.id,
+                    EjecucionAuditoria.celula_id == celula_id,
                     EjecucionAuditoria.usuario_id == usuario.id,
-                    EjecucionAuditoria.estado.in_(
-                        ("pendiente", "en_proceso")
-                    ),
+                    EjecucionAuditoria.fecha_programada == periodo,
                 )
-                .order_by(
-                    EjecucionAuditoria.estado.desc(),
-                    EjecucionAuditoria.fecha_programada,
-                )
-            ).all()
+            ).first()
+
+        if habilita is not None and dias_rel == 0:
+            return _base("disponible", 0, "Disponible hoy",
+                         ejecucion.id if ejecucion else None, "iniciar", habilita)
+        if habilita is not None:
+            return _base(
+                "atrasada", dias_rel,
+                f"Atrasada hace {dias_rel} día" + ("s" if dias_rel != 1 else ""),
+                ejecucion.id if ejecucion else None, "iniciar", habilita,
+            )
+
+        # Sin día fijado (proceso/diarias): disponibles todos los días.
+        return _base(
+            "disponible", 0, "Disponible hoy",
+            ejecucion.id if ejecucion else None, "iniciar", None,
         )
-        return [self._a_list_item(e, []) for e in ejecuciones]
 
     def iniciar_pendiente(
         self, ejecucion_id: int, usuario: Usuario
@@ -591,6 +795,17 @@ class EjecucionAuditoriaService:
             raise ValueError("La ejecución no está en estado pendiente.")
 
         self._validar_puede_modificar(ejecucion, usuario)
+
+        auditoria = self._session.get(Auditoria, ejecucion.auditoria_id)
+        if auditoria is not None:
+            self._validar_habilitacion(auditoria)
+            self._validar_sin_abierta(
+                auditoria,
+                usuario,
+                ejecucion.celula_id,
+                periodo=ejecucion.fecha_programada,
+                excluir_ejecucion_id=ejecucion.id,
+            )
 
         ejecucion.estado = "en_proceso"
         ejecucion.fecha = datetime.now(timezone.utc)
@@ -611,6 +826,11 @@ class EjecucionAuditoriaService:
         ejecucion = self._repo.obtener_por_id(ejecucion_id)
         if ejecucion is None:
             raise ValueError("Ejecucion de auditoria no encontrada.")
+        if ejecucion.estado == "no_elaborada":
+            raise ValueError(
+                "Esta auditoría fue marcada como no elaborada y ya no puede "
+                "responderse fuera del día en que debía realizarse."
+            )
         if ejecucion.estado == "finalizada":
             raise ValueError(
                 "No se puede modificar una ejecucion ya finalizada."
@@ -681,6 +901,11 @@ class EjecucionAuditoriaService:
             raise ValueError("Ejecucion de auditoria no encontrada.")
         if ejecucion.estado == "finalizada":
             raise ValueError("La ejecucion ya esta finalizada.")
+        if ejecucion.estado == "no_elaborada":
+            raise ValueError(
+                "Esta auditoría fue marcada como no elaborada y no puede "
+                "finalizarse fuera del día en que debía realizarse."
+            )
 
         self._validar_puede_modificar(ejecucion, usuario)
 

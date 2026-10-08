@@ -27,6 +27,10 @@ class Settings(BaseSettings):
 
     backend_cors_origins: str = ""
 
+    # Zona horaria del negocio: se usa para decidir "qué día es" en la
+    # calendarización de auditorías semanales.
+    business_timezone: str = "America/Tijuana"
+
     def _parse_origins_as_json(self, raw: str) -> list[str] | None:
         """Intenta interpretar la cadena como una lista JSON de orígenes."""
         try:

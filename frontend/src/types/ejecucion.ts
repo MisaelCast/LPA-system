@@ -104,3 +104,24 @@ export interface OpcionesFiltrosRevision {
   celulas: Celula[]
   auditores: Usuario[]
 }
+
+export type TipoPendiente =
+  | 'bloqueada'
+  | 'disponible'
+  | 'atrasada'
+  | 'en_progreso'
+
+export interface PendienteItem {
+  ejecucion_id: number | null
+  auditoria_id: number
+  auditoria_nombre: string
+  area_nombre: string | null
+  celula_numero: number | null
+  estado: TipoPendiente
+  fecha_habilita: string | null
+  contador: string | null
+  dias: number
+  accion: 'iniciar' | 'continuar' | null
+  tooltip: string | null
+  requiere_celula: boolean
+}

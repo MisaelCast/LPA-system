@@ -9,6 +9,7 @@ class AuditoriaBase(SQLModel):
     descripcion: str | None = Field(default=None, max_length=500)
     activa: bool = Field(default=True)
     tipo_respuesta: str = Field(default="semaforo", max_length=20)
+    dia_semana: int | None = Field(default=None, ge=0, le=6)
 
 
 class AuditoriaCreate(AuditoriaBase):
@@ -24,6 +25,7 @@ class AuditoriaUpdate(SQLModel):
     descripcion: str | None = Field(default=None, max_length=500)
     activa: bool | None = None
     tipo_respuesta: str | None = Field(default=None, max_length=20)
+    dia_semana: int | None = Field(default=None, ge=0, le=6)
     capa_id: int | None = None
     frecuencia_id: int | None = None
     area_id: int | None = None
@@ -37,6 +39,7 @@ class AuditoriaRead(AuditoriaBase):
     capa_nombre: str = ""
     frecuencia_nombre: str = ""
     area_nombre: str | None = None
+    requiere_celula: bool = True
 
 
 class AuditoriaEstadoUpdate(SQLModel):

@@ -15,5 +15,6 @@ class Capa(SQLModel, table=True):
     nombre: str = Field(max_length=100, unique=True, index=True)
     descripcion: str | None = Field(default=None, max_length=255)
     activa: bool = Field(default=True)
+    requiere_celula: bool = Field(default=True)
 
     auditorias: list["Auditoria"] = Relationship(back_populates="capa")

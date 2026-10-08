@@ -18,6 +18,7 @@ const authStore = useAuthStore()
 const roles = ref<Rol[]>([])
 const asignacionOpciones = ref<AsignacionOpciones | null>(null)
 const busqueda = ref('')
+const mostrarInactivos = ref(false)
 
 const modalCrearAbierto = ref(false)
 const modalEditarAbierto = ref(false)
@@ -26,6 +27,7 @@ const formNombre = ref('')
 const formCorreo = ref('')
 const formContrasena = ref('')
 const formRolId = ref(0)
+const verContrasena = ref(false)
 const formAreasIds = ref<number[]>([])
 const formCelulasIds = ref<number[]>([])
 const formSupervisorIds = ref<number[]>([])
@@ -52,8 +54,11 @@ onMounted(async () => {
 
 const usuariosFiltrados = computed(() => {
   const q = busqueda.value.trim().toLowerCase()
-  if (!q) return store.usuarios
-  return store.usuarios.filter(
+  const lista = mostrarInactivos.value
+    ? store.usuarios
+    : store.usuarios.filter((u) => u.activo)
+  if (!q) return lista
+  return lista.filter(
     (u) =>
       u.nombre.toLowerCase().includes(q) ||
       u.correo.toLowerCase().includes(q),
@@ -62,6 +67,9 @@ const usuariosFiltrados = computed(() => {
 
 const totalUsuarios = computed(() => store.usuarios.length)
 const usuariosActivos = computed(() => store.usuarios.filter((u) => u.activo).length)
+const inactivosOcultos = computed(() =>
+  store.usuarios.filter((u) => !u.activo).length,
+)
 
 const rolSeleccionado = computed(() =>
   roles.value.find((r) => r.id === formRolId.value),
@@ -156,6 +164,7 @@ function abrirModalCrear() {
   formCorreo.value = ''
   formContrasena.value = ''
   formRolId.value = 0
+  verContrasena.value = false
   formAreasIds.value = []
   formCelulasIds.value = []
   formSupervisorIds.value = []
@@ -334,6 +343,28 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           </svg>
         </button>
       </div>
+      <button
+        v-if="inactivosOcultos > 0"
+        class="btn-inactivos"
+        :class="{ 'btn-inactivos--active': mostrarInactivos }"
+        :aria-pressed="mostrarInactivos"
+        :title="mostrarInactivos ? 'Ocultar usuarios inactivos' : 'Mostrar usuarios inactivos'"
+        @click="mostrarInactivos = !mostrarInactivos"
+      >
+        <svg class="btn-inactivos-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <template v-if="mostrarInactivos">
+            <path d="M8 3C4.2 3 1.5 8 1.5 8S4.2 13 8 13s6.5-5 6.5-5S11.8 3 8 3z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+            <path d="M8 10.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+            <path d="M2.5 2.5l11 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </template>
+          <template v-else>
+            <path d="M8 3C4.2 3 1.5 8 1.5 8S4.2 13 8 13s6.5-5 6.5-5S11.8 3 8 3z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+            <path d="M8 10.4a2.4 2.4 0 1 0 0-4.8 2.4 2.4 0 0 0 0 4.8z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+          </template>
+        </svg>
+        <span>Mostrar inactivos</span>
+        <span v-if="inactivosOcultos" class="btn-inactivos-count">{{ inactivosOcultos }}</span>
+      </button>
     </div>
 
     <!-- Cargando -->
@@ -361,15 +392,28 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
     <!-- Sin resultados -->
     <div v-else-if="usuariosFiltrados.length === 0" class="state state-empty">
-      <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
-        <path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>
-      <h2>Sin resultados</h2>
-      <p>No hay usuarios que coincidan con «{{ busqueda }}».</p>
-      <button class="btn-secondary" @click="busqueda = ''">
-        Limpiar búsqueda
-      </button>
+      <template v-if="!busqueda && inactivosOcultos > 0 && !mostrarInactivos">
+        <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4.5C7.2 4.5 3.6 8 2.5 12 3.6 16 7.2 19.5 12 19.5S20.4 16 21.5 12C20.4 8 16.8 4.5 12 4.5z" stroke="currentColor" stroke-width="1.6" fill="none"/>
+          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" fill="none"/>
+        </svg>
+        <h2>Usuarios inactivos ocultos</h2>
+        <p>{{ inactivosOcultos }} {{ inactivosOcultos === 1 ? 'usuario' : 'usuarios' }} desactivado{{ inactivosOcultos === 1 ? '' : 's' }}.</p>
+        <button class="btn-secondary" @click="mostrarInactivos = true">
+          Mostrar inactivos
+        </button>
+      </template>
+      <template v-else>
+        <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
+          <path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <h2>Sin resultados</h2>
+        <p>No hay usuarios que coincidan con «{{ busqueda }}».</p>
+        <button class="btn-secondary" @click="busqueda = ''">
+          Limpiar búsqueda
+        </button>
+      </template>
     </div>
 
     <!-- Lista de usuarios -->
@@ -451,7 +495,33 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           </label>
           <label class="field">
             <span>Contraseña</span>
-            <input v-model="formContrasena" type="password" placeholder="Contraseña" />
+            <div class="password-field">
+              <input
+                v-model="formContrasena"
+                :type="verContrasena ? 'text' : 'password'"
+                placeholder="Contraseña"
+              />
+              <button
+                type="button"
+                class="password-toggle"
+                :aria-pressed="verContrasena"
+                :aria-label="verContrasena ? 'Ocultar contraseña' : 'Ver contraseña'"
+                :title="verContrasena ? 'Ocultar contraseña' : 'Ver contraseña'"
+                @click="verContrasena = !verContrasena"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <template v-if="verContrasena">
+                    <path d="M8 3C4.4 3 1.6 8 1.6 8S4.4 13 8 13s6.4-5 6.4-5S11.6 3 8 3z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+                    <path d="M8 10.3a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+                    <path d="M2.5 2.5l11 11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  </template>
+                  <template v-else>
+                    <path d="M8 3C4.4 3 1.6 8 1.6 8S4.4 13 8 13s6.4-5 6.4-5S11.6 3 8 3z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+                    <path d="M8 10.3a2.3 2.3 0 1 0 0-4.6 2.3 2.3 0 0 0 0 4.6z" stroke="currentColor" stroke-width="1.4" fill="none"/>
+                  </template>
+                </svg>
+              </button>
+            </div>
           </label>
           <label class="field">
             <span>Rol</span>
@@ -703,7 +773,70 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 /* --- Toolbar --- */
 .toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.toolbar .search {
+  flex: 1;
+  max-width: 420px;
+}
+
+.btn-inactivos {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.btn-inactivos:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #334155;
+}
+
+.btn-inactivos--active {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+  color: #4338ca;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.btn-inactivos-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+}
+
+.btn-inactivos-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.14);
+  color: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.btn-inactivos--active .btn-inactivos-count {
+  background: rgba(67, 56, 202, 0.12);
 }
 
 .search {
@@ -1129,6 +1262,45 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   color: #dc2626;
   font-size: 0.85rem;
   border: 1px solid #fecaca;
+}
+
+/* --- Campo contraseña con toggle --- */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 2.5rem;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 0.35rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 0.4rem;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.password-toggle:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.password-toggle svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 /* --- Asignación áreas/células --- */

@@ -8,6 +8,7 @@ class CapaBase(SQLModel):
     nombre: str = Field(max_length=100)
     descripcion: str | None = Field(default=None, max_length=255)
     activa: bool = Field(default=True)
+    requiere_celula: bool = Field(default=True)
 
 
 class CapaCreate(CapaBase):
@@ -20,6 +21,7 @@ class CapaUpdate(SQLModel):
     nombre: str | None = Field(default=None, max_length=100)
     descripcion: str | None = Field(default=None, max_length=255)
     activa: bool | None = None
+    requiere_celula: bool | None = None
 
 
 class CapaRead(CapaBase):

@@ -52,10 +52,11 @@ CREATE UNIQUE INDEX ix_area_nombre ON area (nombre);
 
 -- capa: Nivel jerárquico dentro del proceso LPA.
 CREATE TABLE capa (
-    id           SERIAL       PRIMARY KEY,
-    nombre       VARCHAR(100) NOT NULL,
-    descripcion  VARCHAR(255),
-    activa       BOOLEAN      NOT NULL DEFAULT TRUE
+    id              SERIAL       PRIMARY KEY,
+    nombre          VARCHAR(100) NOT NULL,
+    descripcion     VARCHAR(255),
+    activa          BOOLEAN      NOT NULL DEFAULT TRUE,
+    requiere_celula BOOLEAN      NOT NULL DEFAULT TRUE
 );
 CREATE UNIQUE INDEX ix_capa_nombre ON capa (nombre);
 
@@ -94,6 +95,7 @@ CREATE TABLE auditoria (
     descripcion   VARCHAR(500),
     activa        BOOLEAN      NOT NULL DEFAULT TRUE,
     tipo_respuesta VARCHAR(20)  NOT NULL DEFAULT 'semaforo',
+    dia_semana   INTEGER,
     capa_id       INTEGER      NOT NULL REFERENCES capa (id),
     frecuencia_id INTEGER      NOT NULL REFERENCES frecuencia (id),
     area_id       INTEGER      REFERENCES area (id)
@@ -258,6 +260,7 @@ class Capa(SQLModel, table=True):
     nombre: str = Field(max_length=100, unique=True, index=True)
     descripcion: str | None = Field(default=None, max_length=255)
     activa: bool = Field(default=True)
+    requiere_celula: bool = Field(default=True)
 
     auditorias: list["Auditoria"] = Relationship(back_populates="capa")
 ```
@@ -344,6 +347,7 @@ class Auditoria(SQLModel, table=True):
     descripcion: str | None = Field(default=None, max_length=500)
     activa: bool = Field(default=True)
     tipo_respuesta: str = Field(default="semaforo", max_length=20)
+    dia_semana: int | None = Field(default=None, ge=0, le=6)
     capa_id: int = Field(foreign_key="capa.id")
     frecuencia_id: int = Field(foreign_key="frecuencia.id")
     area_id: int | None = Field(default=None, foreign_key="area.id")
@@ -566,3 +570,4 @@ class HallazgoResponsable(SQLModel, table=True):
 | `e5f8a1b2c3d4` | `auditoria` agrega `tipo_respuesta` (`semaforo` o `cumplimiento`). |
 | `a6b7c8d9e0f1` | Programación: `frecuencia.dias`, `ejecucion_auditoria.fecha_programada`, tabla `usuario_celula`. |
 | `b1c2d3e4f5a6` | Asignación por rol: tabla `usuario_supervisor` (gerente ↔ supervisores). |
+| `c2d3e4f5a6b7` | Semanal: `capa.requiere_celula`, `auditoria.dia_semana`. |

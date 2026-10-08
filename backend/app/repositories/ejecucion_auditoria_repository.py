@@ -43,8 +43,17 @@ class EjecucionAuditoriaRepository:
         tipo_respuesta: str | None = None,
         solo_auditores: bool = False,
     ) -> list[EjecucionAuditoria]:
-        """Lista ejecuciones con filtros opcionales, ordenadas por fecha DESC."""
-        statement = select(EjecucionAuditoria)
+        """Lista ejecuciones con filtros opcionales, ordenadas por fecha DESC.
+
+        Las ejecuciones de usuarios desactivados se ocultan de los listados
+        (permanecen almacenadas en BD), de modo que no aparecen a las capas
+        superiores de revisión/verificación.
+        """
+        statement = (
+            select(EjecucionAuditoria)
+            .join(Usuario, EjecucionAuditoria.usuario_id == Usuario.id)
+            .where(Usuario.activo == True)  # noqa: E712
+        )
 
         if auditoria_id is not None:
             statement = statement.where(
@@ -63,11 +72,7 @@ class EjecucionAuditoriaRepository:
             statement = statement.where(Auditoria.tipo_respuesta == tipo_respuesta)
         if solo_auditores:
             statement = (
-                statement.join(
-                    Usuario,
-                    EjecucionAuditoria.usuario_id == Usuario.id,
-                )
-                .join(Rol, Usuario.rol_id == Rol.id)
+                statement.join(Rol, Usuario.rol_id == Rol.id)
                 .where(Rol.nombre == "Auditor")
             )
         if celula_id is not None:

@@ -18,9 +18,14 @@ from app.schemas.ejecucion_auditoria import (
     GuardarRespuestasRequest,
     IniciarEjecucionRequest,
     OpcionesFiltrosRevision,
+    PendienteItem,
 )
 from app.schemas.hallazgo import HallazgoDetallado
-from app.services.ejecucion_auditoria_service import EjecucionAuditoriaService
+from app.services.ejecucion_auditoria_service import (
+    DiaNoHabilitadoError,
+    EjecucionAbiertaError,
+    EjecucionAuditoriaService,
+)
 from app.services.hallazgo_service import HallazgoService
 
 router = APIRouter(
@@ -128,14 +133,18 @@ def generar_programadas(
     return generar_pendientes(session)
 
 
-@router.get("/pendientes", response_model=list[EjecucionAuditoriaListItem])
+@router.get("/pendientes", response_model=list[PendienteItem])
 def listar_pendientes(
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
-    """Lista las ejecuciones programadas ``pendiente`` del usuario autenticado."""
+    """Lista la agenda de auditorías programadas del usuario autenticado.
+
+    Genera (de forma diferida) las ejecuciones del periodo vigente cuando
+    corresponde.
+    """
     service = EjecucionAuditoriaService(session)
-    return service.listar_pendientes(usuario)
+    return service.mis_pendientes(usuario)
 
 
 @router.post(
@@ -151,9 +160,19 @@ def iniciar_pendiente(
     service = EjecucionAuditoriaService(session)
     try:
         return service.iniciar_pendiente(ejecucion_id, usuario)
+    except DiaNoHabilitadoError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        )
+    except EjecucionAbiertaError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
     except ValueError as error:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(error),
         )
 
@@ -169,7 +188,7 @@ def iniciar_ejecucion(
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
-    """Inicia una nueva ejecucion de auditoria sobre una celula."""
+    """Inicia una nueva ejecucion de auditoria."""
     service = EjecucionAuditoriaService(session)
     try:
         ejecucion = service.iniciar(
@@ -178,6 +197,16 @@ def iniciar_ejecucion(
             celula_id=datos.celula_id,
         )
         return service.obtener_por_id(ejecucion.id)
+    except DiaNoHabilitadoError as error:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(error),
+        )
+    except EjecucionAbiertaError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        )
     except ValueError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND if "no encontrada" in str(error).lower()

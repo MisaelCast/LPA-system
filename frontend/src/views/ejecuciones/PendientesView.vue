@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import type { EjecucionAuditoriaListItem } from '@/types/ejecucion'
+import type { PendienteItem } from '@/types/ejecucion'
 import {
   listarPendientes,
   iniciarPendiente,
@@ -11,7 +11,7 @@ const router = useRouter()
 
 const cargando = ref(false)
 const error = ref('')
-const pendientes = ref<EjecucionAuditoriaListItem[]>([])
+const pendientes = ref<PendienteItem[]>([])
 const iniciandoId = ref<number | null>(null)
 
 onMounted(cargar)
@@ -37,30 +37,45 @@ function formatearFecha(iso: string | null | undefined): string {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
-async function iniciar(p: EjecucionAuditoriaListItem) {
-  iniciandoId.value = p.id
+async function iniciar(p: PendienteItem) {
+  if (!p.ejecucion_id) return
+  iniciandoId.value = p.ejecucion_id
   error.value = ''
   try {
-    const ejecucion = await iniciarPendiente(p.id)
+    const ejecucion = await iniciarPendiente(p.ejecucion_id)
     router.push({ name: 'ejecutar', query: { id: String(ejecucion.id) } })
   } catch (err) {
     error.value =
       (err as { response?: { data?: { detail?: string } } })?.response?.data
         ?.detail || 'Error al iniciar la auditoría.'
-    pendientes.value = pendientes.value.filter((x) => x.id !== p.id)
+    await cargar()
   } finally {
     iniciandoId.value = null
   }
 }
 
-function continuar(p: EjecucionAuditoriaListItem) {
-  router.push({ name: 'ejecutar', query: { id: String(p.id) } })
+function continuar(p: PendienteItem) {
+  if (p.ejecucion_id) {
+    router.push({ name: 'ejecutar', query: { id: String(p.ejecucion_id) } })
+  }
 }
 
-function estadoInfo(p: EjecucionAuditoriaListItem) {
-  if (p.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
-  if (p.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
-  return { label: 'En progreso', cls: 'badge-progreso' }
+const ESTADO_INFO: Record<string, { label: string; cls: string }> = {
+  bloqueada: { label: 'Bloqueada', cls: 'badge-bloqueada' },
+  disponible: { label: 'Disponible', cls: 'badge-disponible' },
+  atrasada: { label: 'Atrasada', cls: 'badge-atrasada' },
+  en_progreso: { label: 'En progreso', cls: 'badge-en-progreso' },
+}
+
+function estadoInfo(p: PendienteItem) {
+  return ESTADO_INFO[p.estado] || { label: p.estado, cls: 'badge-off' }
+}
+
+function areaCelula(p: PendienteItem): string {
+  const partes: string[] = []
+  if (p.area_nombre) partes.push(p.area_nombre)
+  if (p.celula_numero) partes.push(`Célula ${p.celula_numero}`)
+  return partes.join(' · ') || '—'
 }
 </script>
 
@@ -70,7 +85,7 @@ function estadoInfo(p: EjecucionAuditoriaListItem) {
       <div class="page-header-info">
         <h1>Mis auditorías pendientes</h1>
         <p class="subtitle">
-          Ejecuciones programadas por iniciar y las que quedaron en progreso.
+          Auditorías programadas, bloqueadas o en progreso según su frecuencia.
         </p>
       </div>
     </header>
@@ -79,16 +94,13 @@ function estadoInfo(p: EjecucionAuditoriaListItem) {
 
     <div v-if="cargando" class="msg msg-info">Cargando…</div>
 
-    <div
-      v-else-if="pendientes.length === 0"
-      class="state state-empty"
-    >
+    <div v-else-if="pendientes.length === 0" class="state state-empty">
       <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="8.6" />
         <path d="M12 7.2V12l3.2 2" />
       </svg>
       <h2>No tienes auditorías pendientes</h2>
-      <p>Las ejecuciones programadas aparecerán aquí cuando el sistema las genere.</p>
+      <p>Las auditorías programadas aparecerán aquí.</p>
     </div>
 
     <div v-else class="table-wrap">
@@ -97,41 +109,41 @@ function estadoInfo(p: EjecucionAuditoriaListItem) {
           <tr>
             <th>Programada</th>
             <th>Auditoría</th>
-            <th>Área</th>
-            <th>Célula</th>
+            <th>Área · Célula</th>
             <th>Estado</th>
+            <th>Contador</th>
             <th class="col-acciones">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in pendientes" :key="p.id" class="row">
-            <td class="col-fecha">{{ formatearFecha(p.fecha_programada) }}</td>
+          <tr v-for="p in pendientes" :key="p.auditoria_id + '-' + (p.ejecucion_id ?? 'x')" class="row">
+            <td class="col-fecha">{{ formatearFecha(p.fecha_habilita) }}</td>
             <td class="col-auditoria">{{ p.auditoria_nombre }}</td>
-            <td>{{ p.area_nombre || '—' }}</td>
-            <td>{{ p.celula_numero ? `Célula ${p.celula_numero}` : '—' }}</td>
+            <td>{{ areaCelula(p) }}</td>
             <td>
-              <span
-                class="badge"
-                :class="estadoInfo(p).cls"
-              >
+              <span class="badge" :class="estadoInfo(p).cls">
                 {{ estadoInfo(p).label }}
               </span>
             </td>
-            <td class="col-acciones">
+            <td class="col-contador">{{ p.contador || '—' }}</td>
+            <td class="col-acciones" :title="p.tooltip || undefined">
               <button
-                v-if="p.estado === 'pendiente'"
+                v-if="p.accion === 'iniciar'"
                 class="btn btn-sm primary"
-                :disabled="iniciandoId === p.id"
+                :disabled="iniciandoId === p.ejecucion_id"
                 @click="iniciar(p)"
               >
-                {{ iniciandoId === p.id ? 'Iniciando…' : 'Iniciar' }}
+                {{ iniciandoId === p.ejecucion_id ? 'Iniciando…' : 'Iniciar' }}
               </button>
               <button
-                v-else
+                v-else-if="p.accion === 'continuar'"
                 class="btn btn-sm primary"
                 @click="continuar(p)"
               >
                 Continuar
+              </button>
+              <button v-else class="btn btn-sm" disabled title="Se habilita según su programación">
+                —
               </button>
             </td>
           </tr>
@@ -142,7 +154,8 @@ function estadoInfo(p: EjecucionAuditoriaListItem) {
 </template>
 
 <style scoped>
-.col-fecha {
+.col-fecha,
+.col-contador {
   white-space: nowrap;
   color: var(--c-ink-3, #64748b);
 }

@@ -44,13 +44,14 @@ async function cargar() {
   cargando.value = true
   error.value = ''
   try {
-    ejecuciones.value = await listarEjecuciones({
+    const lista = await listarEjecuciones({
       estado: fEstado.value || undefined,
       auditoria_id: fAuditoriaId.value ?? undefined,
       fecha_desde: fFechaDesde.value || undefined,
       fecha_hasta: fFechaHasta.value || undefined,
       solo_propias: true,
     })
+    ejecuciones.value = lista.filter((e) => e.estado !== 'pendiente')
   } catch (err) {
     error.value =
       (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -82,6 +83,7 @@ function formatearFecha(iso: string): string {
 function estadoInfo(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | null) {
   if (!e) return { label: '', cls: '' }
   if (e.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
+  if (e.estado === 'no_elaborada') return { label: 'No elaborada', cls: 'badge-no-elaborada' }
   if (e.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
   if (e.estado === 'finalizada') return { label: 'Finalizada', cls: 'badge-finalizada' }
   return { label: 'En progreso', cls: 'badge-progreso' }
@@ -89,6 +91,10 @@ function estadoInfo(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | 
 
 function esFinalizada(estado: string): boolean {
   return estado === 'finalizada'
+}
+
+function puedeContinuar(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | null): boolean {
+  return !!e && !esFinalizada(e.estado) && e.estado !== 'no_elaborada'
 }
 
 async function abrirDetalle(e: EjecucionAuditoriaListItem) {
@@ -214,8 +220,7 @@ function hallazgoSufijo(valor: string | null): string {
           <tr>
             <th>Fecha</th>
             <th>Auditoría</th>
-            <th>Área</th>
-            <th>Célula</th>
+            <th>Área · Célula</th>
             <th>Auditor</th>
             <th>Resultado</th>
             <th>Estado</th>
@@ -231,8 +236,13 @@ function hallazgoSufijo(valor: string | null): string {
           >
             <td class="col-fecha">{{ formatearFecha(e.fecha) }}</td>
             <td class="col-auditoria">{{ e.auditoria_nombre }}</td>
-            <td>{{ e.area_nombre || '—' }}</td>
-            <td>{{ e.celula_numero ? `Célula ${e.celula_numero}` : '—' }}</td>
+            <td>
+              {{
+                [e.area_nombre, e.celula_numero ? `Célula ${e.celula_numero}` : '']
+                  .filter(Boolean)
+                  .join(' · ') || '—'
+              }}
+            </td>
             <td>{{ e.usuario_nombre }}</td>
             <td>
               <span class="resultado">
@@ -278,7 +288,7 @@ function hallazgoSufijo(valor: string | null): string {
                 Ver
               </button>
               <button
-                v-if="!esFinalizada(e.estado)"
+                v-if="puedeContinuar(e)"
                 class="btn btn-sm primary"
                 @click.stop="continuar(e)"
               >
@@ -412,7 +422,7 @@ function hallazgoSufijo(valor: string | null): string {
             Cerrar
           </button>
           <button
-            v-if="detalle && !esFinalizada(detalle.estado)"
+            v-if="puedeContinuar(detalle)"
             class="btn-primary"
             @click="continuarDesdeDetalle"
           >

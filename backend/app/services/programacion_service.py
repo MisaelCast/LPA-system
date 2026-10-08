@@ -13,6 +13,7 @@ from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
+from app.utils.tiempo import ahora_business
 
 
 def _meses_desde_dias(dias: int) -> int:
@@ -29,7 +30,7 @@ def _meses_desde_dias(dias: int) -> int:
 
 
 def inicio_periodo(fecha: datetime, frecuencia: Frecuencia) -> datetime:
-    """Devuelve el inicio (UTC) del periodo vigente para una frecuencia."""
+    """Devuelve el inicio del periodo vigente para una frecuencia."""
     base = fecha.replace(hour=0, minute=0, second=0, microsecond=0)
 
     if frecuencia.dias == 1:  # Diaria: cada día calendario
@@ -51,13 +52,85 @@ def inicio_periodo(fecha: datetime, frecuencia: Frecuencia) -> datetime:
     )
 
 
-def _existe_pendiente(
+def periodo_auditoria(
+    auditoria: Auditoria,
+    frecuencia: Frecuencia,
+    ahora: datetime | None = None,
+) -> datetime:
+    """Fecha objetivo del periodo vigente para una auditoría.
+
+    Si la auditoría tiene ``dia_semana`` fijado (0=Lunes..6=Domingo), el periodo
+    es el día de la semana de la semana actual (p. ej., el viernes). En otro
+    caso se usa ``inicio_periodo``.
+    """
+    ahora = ahora or ahora_business()
+    if auditoria.dia_semana is not None:
+        base = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        delta = auditoria.dia_semana - base.weekday()
+        return base + timedelta(days=delta)
+    return inicio_periodo(ahora, frecuencia)
+
+
+def fecha_habilita(
+    auditoria: Auditoria,
+    frecuencia: Frecuencia,
+    ahora: datetime | None = None,
+) -> datetime | None:
+    """Fecha en que la auditoría se habilita.
+
+    - Auditorías con ``dia_semana`` (semanales): se habilitan ese día.
+    - Diarias (``frecuencia.dias == 1``): se habilitan de lunes a viernes;
+      el fin de semana no se habilita (la siguiente es el lunes).
+    - En otro caso: ``None`` (disponible cualquier día).
+    """
+    ahora = ahora or ahora_business()
+    if auditoria.dia_semana is not None:
+        return periodo_auditoria(auditoria, frecuencia, ahora)
+    if frecuencia.dias == 1:
+        base = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        if ahora.weekday() < 5:  # lunes a viernes
+            return base
+        delta = 7 - ahora.weekday()  # sábado=2, domingo=1 → próximo lunes
+        return base + timedelta(days=delta)
+    return None
+
+
+def marcar_no_elaboradas(
+    session: Session, ahora: datetime | None = None
+) -> int:
+    """Marca como ``no_elaborada`` las ejecuciones diarias de días anteriores.
+
+    Para auditorías de frecuencia Diaria (lunes a viernes): si el día ya pasó
+    y la ejecución no fue finalizada (``pendiente`` o ``en_proceso``), queda
+    registrada como no elaborada y el siguiente día hábil genera su propia
+    ejecución. Devuelve la cantidad marcada; **no** hace commit (quien lo
+    invoque decide cuándo confirmar).
+    """
+    ahora = ahora or ahora_business()
+    inicio_hoy = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+    filas = session.exec(
+        select(EjecucionAuditoria)
+        .join(Auditoria, EjecucionAuditoria.auditoria_id == Auditoria.id)
+        .join(Frecuencia, Auditoria.frecuencia_id == Frecuencia.id)
+        .where(
+            Frecuencia.dias == 1,
+            EjecucionAuditoria.estado.in_(("pendiente", "en_proceso")),
+            EjecucionAuditoria.fecha_programada < inicio_hoy,
+        )
+    ).all()
+    for ejecucion in filas:
+        ejecucion.estado = "no_elaborada"
+    return len(filas)
+
+
+def _existe_ejecucion_periodo(
     session: Session,
     auditoria_id: int,
     celula_id: int | None,
     usuario_id: int,
     periodo: datetime,
 ) -> bool:
+    """Indica si existe cualquier ejecución (cualquier estado) del periodo."""
     fila = session.exec(
         select(EjecucionAuditoria).where(
             EjecucionAuditoria.auditoria_id == auditoria_id,
@@ -76,7 +149,9 @@ def _crear_pendiente(
     usuario_id: int,
     periodo: datetime,
 ) -> int:
-    if _existe_pendiente(session, auditoria_id, celula_id, usuario_id, periodo):
+    if _existe_ejecucion_periodo(
+        session, auditoria_id, celula_id, usuario_id, periodo
+    ):
         return 0
     session.add(
         EjecucionAuditoria(
@@ -158,19 +233,27 @@ def generar_pendientes(
     """Genera las ejecuciones ``pendiente`` del periodo vigente.
 
     Idempotente: no duplica una ejecución (auditoría × célula/área × usuario)
-    para el mismo periodo.
+    para el mismo periodo. Para auditorías con ``dia_semana`` (semanales) solo
+    genera cuando la fecha ya se habilitó (no se adelanta el pendiente antes del
+    día permitido).
     """
-    ahora = ahora or datetime.now(timezone.utc)
+    ahora = ahora or ahora_business()
     auditories = list(
         session.exec(select(Auditoria).where(Auditoria.activa == True)).all()
     )
     creadas = 0
+    marcadas = marcar_no_elaboradas(session, ahora)
 
     for auditoria in auditories:
         frecuencia = session.get(Frecuencia, auditoria.frecuencia_id)
         if frecuencia is None:
             continue
-        periodo = inicio_periodo(ahora, frecuencia)
+
+        habilita = fecha_habilita(auditoria, frecuencia, ahora)
+        if habilita is not None and ahora < habilita:
+            continue  # aún no se habilita (p. ej., fin de semana o antes del día)
+
+        periodo = periodo_auditoria(auditoria, frecuencia, ahora)
 
         if auditoria.tipo_respuesta == "cumplimiento":
             area = session.get(Area, auditoria.area_id)

@@ -4,6 +4,8 @@ export interface Auditoria {
   descripcion: string | null
   activa: boolean
   tipo_respuesta?: string
+  dia_semana?: number | null
+  requiere_celula: boolean
   capa_id: number
   frecuencia_id: number
   area_id: number | null

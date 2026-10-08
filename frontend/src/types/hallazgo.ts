@@ -42,4 +42,6 @@ export interface HallazgoSeguimientoUpdate {
 export interface HallazgoFiltros {
   estado?: EstadoHallazgo
   area_responsable_id?: number
+  solo_propios?: boolean
+  solo_auditores?: boolean
 }

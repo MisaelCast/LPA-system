@@ -12,10 +12,16 @@ import {
   obtenerEjecucionDetalle,
   obtenerOpcionesFiltrosRevision,
 } from '@/services/ejecucion.service'
+import { listarHallazgos } from '@/services/hallazgo.service'
+import type { HallazgoDetallado } from '@/types/hallazgo'
 
 const cargando = ref(false)
 const error = ref('')
 const ejecuciones = ref<EjecucionAuditoriaListItem[]>([])
+
+const tab = ref<'auditorias' | 'hallazgos'>('auditorias')
+const hallazgos = ref<HallazgoDetallado[]>([])
+const hallazgosCargando = ref(false)
 
 const areas = ref<Area[]>([])
 const celulas = ref<Celula[]>([])
@@ -38,8 +44,31 @@ const detalleCargando = ref(false)
 const detalle = ref<EjecucionAuditoriaDetalle | null>(null)
 
 onMounted(async () => {
-  await Promise.all([cargarOpciones(), cargar()])
+  await Promise.all([cargarOpciones(), cargar(), cargarHallazgos()])
 })
+
+async function cargarHallazgos() {
+  hallazgosCargando.value = true
+  try {
+    hallazgos.value = await listarHallazgos({ solo_auditores: true })
+  } catch {
+    hallazgos.value = []
+  } finally {
+    hallazgosCargando.value = false
+  }
+}
+
+function etiquetaTipoHallazgo(tipo: string): string {
+  if (tipo === 'R') return 'Mayor'
+  if (tipo === 'no_cumple') return 'No cumple'
+  return 'Menor'
+}
+
+function estadoLabelHallazgo(estado: string): string {
+  if (estado === 'en_proceso') return 'En proceso'
+  if (estado === 'cerrado') return 'Cerrado'
+  return 'Abierto'
+}
 
 async function cargarOpciones() {
   try {
@@ -101,6 +130,7 @@ function formatearFecha(iso: string): string {
 function estadoInfo(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | null) {
   if (!e) return { label: '', cls: '' }
   if (e.vencida) return { label: 'Vencida', cls: 'badge-vencida' }
+  if (e.estado === 'no_elaborada') return { label: 'No elaborada', cls: 'badge-no-elaborada' }
   if (e.estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
   if (e.estado === 'finalizada') return { label: 'Finalizada', cls: 'badge-finalizada' }
   return { label: 'En progreso', cls: 'badge-progreso' }
@@ -188,10 +218,28 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
     <header class="page-header">
       <div class="page-header-info">
         <h1>Revisión de auditorías</h1>
-        <p class="subtitle">Consulta las auditorías realizadas por los auditores.</p>
+        <p class="subtitle">Consulta las auditorías y los hallazgos de los auditores.</p>
       </div>
     </header>
 
+    <div class="tabs">
+      <button
+        class="tab"
+        :class="{ 'tab--active': tab === 'auditorias' }"
+        @click="tab = 'auditorias'"
+      >
+        Auditorías
+      </button>
+      <button
+        class="tab"
+        :class="{ 'tab--active': tab === 'hallazgos' }"
+        @click="tab = 'hallazgos'"
+      >
+        Hallazgos de auditores
+      </button>
+    </div>
+
+    <div v-if="tab === 'auditorias'">
     <!-- Filtros -->
     <div class="filtros">
       <select v-model="fEstado" @change="cargar">
@@ -326,6 +374,48 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
           </tr>
         </tbody>
       </table>
+    </div>
+    </div>
+
+    <div v-else class="hallazgos-tab">
+      <div v-if="hallazgosCargando" class="msg msg-info">Cargando…</div>
+
+      <div v-else-if="hallazgos.length === 0" class="state state-empty">
+        <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 4v16M6 5h10l-1.8 3.5L16 12H6" />
+        </svg>
+        <h2>No hay hallazgos de auditores</h2>
+        <p>Los hallazgos detectados por los auditores a tu cargo aparecerán aquí.</p>
+      </div>
+
+      <div v-else class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Auditoría</th>
+              <th>Descripción</th>
+              <th>Tipo</th>
+              <th>Área responsable</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="h in hallazgos" :key="h.id" class="row">
+              <td class="col-fecha">{{ formatearFecha(h.fecha_creacion) }}</td>
+              <td class="col-auditoria">{{ h.auditoria_nombre }}</td>
+              <td>{{ h.descripcion }}</td>
+              <td>{{ etiquetaTipoHallazgo(h.tipo) }}</td>
+              <td>{{ h.area_responsable_nombre || '—' }}</td>
+              <td>
+                <span class="badge" :class="'badge-' + h.estado">
+                  {{ estadoLabelHallazgo(h.estado) }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Modal detalle (solo lectura) -->
@@ -467,6 +557,46 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
 </template>
 
 <style scoped>
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--c-line, #e6e9ef);
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--c-ink-3, #64748b);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-family: inherit;
+}
+
+.tab--active {
+  color: var(--c-primary, #2563eb);
+  border-bottom-color: var(--c-primary, #2563eb);
+}
+
+.badge-abierto {
+  background: var(--c-danger-soft, #fee2e2);
+  color: var(--c-danger-ink, #b91c1c);
+}
+
+.badge-en_proceso {
+  background: var(--c-warn-soft, #fef3c7);
+  color: var(--c-warn-ink, #92400e);
+}
+
+.badge-cerrado {
+  background: var(--c-ok-soft, #dcfce7);
+  color: var(--c-ok-ink, #166534);
+}
+
 .col-fecha {
   white-space: nowrap;
   color: var(--c-ink-3, #64748b);

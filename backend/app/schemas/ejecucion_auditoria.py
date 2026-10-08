@@ -113,6 +113,23 @@ class IniciarEjecucionRequest(SQLModel):
     celula_id: int | None = None
 
 
+class PendienteItem(SQLModel):
+    """Ítem de la agenda de auditorías programadas del usuario."""
+
+    ejecucion_id: int | None = None
+    auditoria_id: int
+    auditoria_nombre: str = ""
+    area_nombre: str | None = None
+    celula_numero: int | None = None
+    estado: str = "disponible"  # bloqueada|disponible|atrasada|en_progreso
+    fecha_habilita: datetime | None = None
+    contador: str | None = None
+    dias: int = 0
+    accion: str | None = None  # iniciar|continuar
+    tooltip: str | None = None
+    requiere_celula: bool = True
+
+
 class RespuestaItem(SQLModel):
     criterio_id: int
     valor: str = Field(max_length=20)

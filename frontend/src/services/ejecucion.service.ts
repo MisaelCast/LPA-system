@@ -9,6 +9,7 @@ import type {
   GuardarRespuestasRequest,
   IniciarEjecucionRequest,
   OpcionesFiltrosRevision,
+  PendienteItem,
 } from '@/types/ejecucion'
 
 export function obtenerAuditoriasDisponibles(): Promise<Auditoria[]> {
@@ -85,9 +86,9 @@ export function obtenerOpcionesFiltrosRevision(): Promise<OpcionesFiltrosRevisio
     .then((res) => res.data)
 }
 
-export function listarPendientes(): Promise<EjecucionAuditoriaListItem[]> {
+export function listarPendientes(): Promise<PendienteItem[]> {
   return api
-    .get<EjecucionAuditoriaListItem[]>('/ejecuciones-auditoria/pendientes')
+    .get<PendienteItem[]>('/ejecuciones-auditoria/pendientes')
     .then((res) => res.data)
 }
 

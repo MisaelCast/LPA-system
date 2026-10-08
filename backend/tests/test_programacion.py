@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
+from unittest.mock import patch
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
@@ -18,8 +19,12 @@ from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
-from app.seed import _seed_areas, _seed_auditoria_ensamble_final, _seed_capas, _seed_frecuencias, _seed_roles
-from app.services.ejecucion_auditoria_service import EjecucionAuditoriaService
+from app.seed import _seed_areas, _seed_auditoria_ensamble_final, _seed_auditoria_verificacion_supervisor, _seed_capas, _seed_frecuencias, _seed_roles
+from app.services.ejecucion_auditoria_service import (
+    DiaNoHabilitadoError,
+    EjecucionAbiertaError,
+    EjecucionAuditoriaService,
+)
 from app.services.hallazgo_service import HallazgoService
 from app.services.programacion_service import generar_pendientes, inicio_periodo
 from app.services.usuario_service import UsuarioService
@@ -171,41 +176,42 @@ class TestGenerarPendientes:
 
 
 class TestPendientesServicio:
-    def test_listar_e_iniciar(self, session: Session):
+    def test_mis_pendientes_genera_e_inicia(self, session: Session):
         _seed_capas(session)
         _seed_frecuencias(session)
         _seed_roles(session)
         _seed_areas(session)
+        ensamble = session.exec(select(Area).where(Area.nombre == "Ensamble Final")).first()
+        celula = Celula(numero=1, activa=True, area_id=ensamble.id)
+        session.add(celula)
+        session.commit()
+        session.refresh(celula)
         _seed_auditoria_ensamble_final(session)
         auditoria = session.exec(
             select(Auditoria).where(Auditoria.nombre.like("%Ensamble%"))
         ).first()
         auditor = _usuario(session, "Ana Auditora", "Auditor")
-
-        ejecucion = EjecucionAuditoria(
-            fecha=datetime.now(timezone.utc),
-            fecha_programada=datetime(2026, 10, 5, tzinfo=timezone.utc),
-            estado="pendiente",
-            auditoria_id=auditoria.id,
-            usuario_id=auditor.id,
-            celula_id=None,
-        )
-        session.add(ejecucion)
+        session.add(UsuarioArea(usuario_id=auditor.id, area_id=ensamble.id))
         session.commit()
 
         service = EjecucionAuditoriaService(session)
-        pendientes = service.listar_pendientes(auditor)
-        assert len(pendientes) == 1
-        assert pendientes[0]["estado"] == "pendiente"
-        assert pendientes[0]["programada"] is True
 
-        iniciada = service.iniciar_pendiente(ejecucion.id, auditor)
+        # Genera la pendiente al consultar (sin día fijado => Disponible hoy).
+        items = service.mis_pendientes(auditor)
+        assert len(items) == 1
+        assert items[0]["estado"] == "disponible"
+        assert items[0]["accion"] == "iniciar"
+        ejec_id = items[0]["ejecucion_id"]
+        assert ejec_id is not None
+
+        iniciada = service.iniciar_pendiente(ejec_id, auditor)
         assert iniciada.estado == "en_proceso"
 
-        # Iniciada pero no finalizada sigue apareciendo como "en_proceso".
-        pendientes = service.listar_pendientes(auditor)
-        assert len(pendientes) == 1
-        assert pendientes[0]["estado"] == "en_proceso"
+        # Iniciada pero no finalizada sigue apareciendo como "En progreso".
+        items = service.mis_pendientes(auditor)
+        assert len(items) == 1
+        assert items[0]["estado"] == "en_progreso"
+        assert items[0]["accion"] == "continuar"
 
 
 class TestAsignacionUsuario:
@@ -342,3 +348,91 @@ class TestHallazgosPorArea:
         admin = _usuario(session, "Admin", "Administrador")
         service = HallazgoService(session)
         assert [h.id for h in service.listar(admin)] == [hallazgo.id]
+
+
+class TestProgramacionSemanal:
+    """Auditorías semanales de Supervisor: solo se habilitan el viernes."""
+
+    Z = 4  # viernes, configurado en la seed
+
+    def _base(self, session: Session) -> tuple[Usuario, Auditoria]:
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_roles(session)
+        _seed_areas(session)
+        _seed_auditoria_verificacion_supervisor(session)
+        ensamble = session.exec(
+            select(Area).where(Area.nombre == "Ensamble Final")
+        ).first()
+        supervisor = _usuario(session, "Sergio", "Supervisor")
+        session.add(UsuarioArea(usuario_id=supervisor.id, area_id=ensamble.id))
+        session.commit()
+        auditoria = session.exec(
+            select(Auditoria).where(Auditoria.nombre.like("%Verificación%Ensamble%"))
+        ).first()
+        return supervisor, auditoria
+
+    def _fijar_hoy(self, fecha: datetime) -> None:
+        patch(
+            "app.services.ejecucion_auditoria_service.ahora_business",
+            return_value=fecha,
+        ).start()
+        patch(
+            "app.services.programacion_service.ahora_business",
+            return_value=fecha,
+        ).start()
+
+    def test_lunes_bloqueada_faltan_4_dias(self, session: Session):
+        supervisor, _ = self._base(session)
+        lunes = datetime(2026, 10, 5, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(lunes)
+        try:
+            items = EjecucionAuditoriaService(session).mis_pendientes(supervisor)
+        finally:
+            patch.stopall()
+        assert len(items) == 1
+        item = items[0]
+        assert item["estado"] == "bloqueada"
+        assert item["contador"] == "Faltan 4 días"
+        assert item["accion"] is None
+        assert item["tooltip"] and "Viernes" in item["tooltip"]
+        # No se generó ninguna ejecución.
+        assert len(session.exec(select(EjecucionAuditoria)).all()) == 0
+
+    def test_viernes_disponible(self, session: Session):
+        supervisor, _ = self._base(session)
+        viernes = datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(viernes)
+        try:
+            items = EjecucionAuditoriaService(session).mis_pendientes(supervisor)
+        finally:
+            patch.stopall()
+        assert items[0]["estado"] == "disponible"
+        assert items[0]["contador"] == "Disponible hoy"
+        assert items[0]["accion"] == "iniciar"
+        assert items[0]["ejecucion_id"] is not None
+
+    def test_iniciar_martes_rechazado(self, session: Session):
+        supervisor, auditoria = self._base(session)
+        martes = datetime(2026, 10, 6, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(martes)
+        try:
+            service = EjecucionAuditoriaService(session)
+            with pytest.raises(DiaNoHabilitadoError):
+                service.iniciar(auditoria.id, supervisor, celula_id=None)
+        finally:
+            patch.stopall()
+
+    def test_iniciar_viernes_ok_y_duplicada_rechazada(self, session: Session):
+        supervisor, auditoria = self._base(session)
+        viernes = datetime(2026, 10, 9, 10, 0, tzinfo=timezone.utc)
+        self._fijar_hoy(viernes)
+        try:
+            service = EjecucionAuditoriaService(session)
+            ejecucion = service.iniciar(auditoria.id, supervisor, celula_id=None)
+            assert ejecucion.estado == "en_proceso"
+            # Se intenta otra del mismo periodo -> duplicada (409).
+            with pytest.raises(EjecucionAbiertaError):
+                service.iniciar(auditoria.id, supervisor, celula_id=None)
+        finally:
+            patch.stopall()

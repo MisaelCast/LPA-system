@@ -41,21 +41,37 @@ watch(
   { immediate: true },
 )
 
-const enlaces = computed(() => [
-  { to: '/dashboard', label: 'Dashboard', icon: 'grid', visible: true },
-  { to: '/usuarios', label: 'Usuarios', icon: 'users', visible: authStore.isAdmin },
-  { to: '/areas', label: 'Áreas', icon: 'areas', visible: authStore.isAdmin },
-  { to: '/capas', label: 'Capas', icon: 'layers', visible: authStore.isAdmin },
-  { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin },
-  { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: true },
-  { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: true },
-  { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: true },
-  { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: true },
+const enlaceDashboard = { to: '/dashboard', label: 'Dashboard', icon: 'grid' }
+
+const grupos = computed(() => [
   {
-    to: '/revision-auditorias',
-    label: 'Revisión de auditorías',
-    icon: 'review',
-    visible: authStore.isAdmin || authStore.isSupervisor || authStore.isGerente,
+    titulo: 'MI TRABAJO',
+    items: [
+      { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: !authStore.isAdmin },
+      { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: !authStore.isAdmin },
+      { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: !authStore.isAdmin },
+      { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: !authStore.isAdmin },
+    ].filter((e) => e.visible),
+  },
+  {
+    titulo: 'VERIFICACIÓN',
+    items: [
+      {
+        to: '/revision-auditorias',
+        label: 'Revisión de auditorías',
+        icon: 'review',
+        visible: authStore.isSupervisor || authStore.isGerente,
+      },
+    ].filter((e) => e.visible),
+  },
+  {
+    titulo: 'ADMINISTRACIÓN',
+    items: [
+      { to: '/usuarios', label: 'Usuarios', icon: 'users', visible: authStore.isAdmin },
+      { to: '/areas', label: 'Áreas', icon: 'areas', visible: authStore.isAdmin },
+      { to: '/capas', label: 'Capas', icon: 'layers', visible: authStore.isAdmin },
+      { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin },
+    ].filter((e) => e.visible),
   },
 ])
 
@@ -93,60 +109,74 @@ function handleLogout() {
 
       <nav class="sidebar-nav">
         <RouterLink
-          v-for="enlace in enlaces.filter((e) => e.visible)"
-          :key="enlace.to"
-          :to="enlace.to"
+          :to="enlaceDashboard.to"
           class="nav-item"
         >
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <template v-if="enlace.icon === 'grid'">
+            <template v-if="enlaceDashboard.icon === 'grid'">
               <rect x="3.5" y="3.5" width="7" height="7" rx="1.2" />
               <rect x="13.5" y="3.5" width="7" height="7" rx="1.2" />
               <rect x="3.5" y="13.5" width="7" height="7" rx="1.2" />
               <rect x="13.5" y="13.5" width="7" height="7" rx="1.2" />
             </template>
-            <template v-else-if="enlace.icon === 'users'">
-              <circle cx="12" cy="8" r="3.4" />
-              <path d="M4.8 20c0-3 3.2-4.8 7.2-4.8s7.2 1.8 7.2 4.8" />
-            </template>
-            <template v-else-if="enlace.icon === 'areas'">
-              <path d="M4 20V10.5l4-2.6V5.4L12 4l4 1.4v2.5l4 2.6V20" />
-              <path d="M4 20h16M9 20v-3h2v3M13 20v-3h2v3" />
-            </template>
-            <template v-else-if="enlace.icon === 'layers'">
-              <path d="M12 3.5l8 4-8 4-8-4 8-4z" />
-              <path d="M4 12l8 4 8-4" />
-              <path d="M4 16l8 4 8-4" />
-            </template>
-            <template v-else-if="enlace.icon === 'clipboard'">
-              <path d="M8 4h1.2a1.6 1.6 0 0 1 3.2 0h1.2" />
-              <rect x="5" y="4" width="14" height="16.5" rx="1.8" />
-              <path d="M9 10h6M9 13.5h6M9 17h4" />
-            </template>
-            <template v-else-if="enlace.icon === 'play'">
-              <rect x="4" y="4" width="16" height="16" rx="2.2" />
-              <path d="M10.4 8.8l4.6 3.2-4.6 3.2V8.8z" fill="currentColor" stroke="none"/>
-            </template>
-            <template v-else-if="enlace.icon === 'history'">
-              <circle cx="12" cy="12" r="8.6" />
-              <path d="M12 7.2V12l3.2 2" />
-              <path d="M7.5 5.2L5.5 7l1.8 2" />
-            </template>
-            <template v-else-if="enlace.icon === 'review'">
-              <path d="M12 3.2l6.8 2.8V12c0 4.2-2.8 7.2-6.8 8.8C7.8 19.2 5 16.2 5 12V6L12 3.2z" />
-              <path d="M9 12l2.1 2.1 4-4" />
-            </template>
-            <template v-else-if="enlace.icon === 'flag'">
-              <path d="M6 4v16" />
-              <path d="M6 5h10l-1.8 3.5L16 12H6" />
-            </template>
-            <template v-else-if="enlace.icon === 'pend'">
-              <circle cx="12" cy="12" r="8.6" />
-              <path d="M12 7.2V12l3.2 2" />
-            </template>
           </svg>
-          <span class="nav-label">{{ enlace.label }}</span>
+          <span class="nav-label">{{ enlaceDashboard.label }}</span>
         </RouterLink>
+
+        <template v-for="grupo in grupos" :key="grupo.titulo">
+          <div v-if="grupo.items.length" class="nav-section">
+            <span class="nav-section-label">{{ grupo.titulo }}</span>
+          </div>
+          <RouterLink
+            v-for="enlace in grupo.items"
+            :key="enlace.to"
+            :to="enlace.to"
+            class="nav-item"
+          >
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <template v-if="enlace.icon === 'users'">
+                <circle cx="12" cy="8" r="3.4" />
+                <path d="M4.8 20c0-3 3.2-4.8 7.2-4.8s7.2 1.8 7.2 4.8" />
+              </template>
+              <template v-else-if="enlace.icon === 'areas'">
+                <path d="M4 20V10.5l4-2.6V5.4L12 4l4 1.4v2.5l4 2.6V20" />
+                <path d="M4 20h16M9 20v-3h2v3M13 20v-3h2v3" />
+              </template>
+              <template v-else-if="enlace.icon === 'layers'">
+                <path d="M12 3.5l8 4-8 4-8-4 8-4z" />
+                <path d="M4 12l8 4 8-4" />
+                <path d="M4 16l8 4 8-4" />
+              </template>
+              <template v-else-if="enlace.icon === 'clipboard'">
+                <path d="M8 4h1.2a1.6 1.6 0 0 1 3.2 0h1.2" />
+                <rect x="5" y="4" width="14" height="16.5" rx="1.8" />
+                <path d="M9 10h6M9 13.5h6M9 17h4" />
+              </template>
+              <template v-else-if="enlace.icon === 'play'">
+                <rect x="4" y="4" width="16" height="16" rx="2.2" />
+                <path d="M10.4 8.8l4.6 3.2-4.6 3.2V8.8z" fill="currentColor" stroke="none"/>
+              </template>
+              <template v-else-if="enlace.icon === 'history'">
+                <circle cx="12" cy="12" r="8.6" />
+                <path d="M12 7.2V12l3.2 2" />
+                <path d="M7.5 5.2L5.5 7l1.8 2" />
+              </template>
+              <template v-else-if="enlace.icon === 'review'">
+                <path d="M12 3.2l6.8 2.8V12c0 4.2-2.8 7.2-6.8 8.8C7.8 19.2 5 16.2 5 12V6L12 3.2z" />
+                <path d="M9 12l2.1 2.1 4-4" />
+              </template>
+              <template v-else-if="enlace.icon === 'flag'">
+                <path d="M6 4v16" />
+                <path d="M6 5h10l-1.8 3.5L16 12H6" />
+              </template>
+              <template v-else-if="enlace.icon === 'pend'">
+                <circle cx="12" cy="12" r="8.6" />
+                <path d="M12 7.2V12l3.2 2" />
+              </template>
+            </svg>
+            <span class="nav-label">{{ enlace.label }}</span>
+          </RouterLink>
+        </template>
       </nav>
     </aside>
 
@@ -239,6 +269,22 @@ function handleLogout() {
   gap: 0.2rem;
   flex: 1;
   overflow-y: auto;
+}
+
+.nav-section {
+  margin-top: 0.85rem;
+  padding: 0.75rem 0.7rem 0.35rem;
+  border-top: 1px solid rgba(203, 213, 225, 0.12);
+}
+
+.nav-section-label {
+  display: block;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(203, 213, 225, 0.55);
+  user-select: none;
 }
 
 .nav-item {
@@ -392,8 +438,14 @@ function handleLogout() {
   }
 
   .brand-text,
-  .nav-label {
+  .nav-label,
+  .nav-section-label {
     display: none;
+  }
+
+  .nav-section {
+    margin-top: 0.6rem;
+    padding: 0.6rem 0 0.25rem;
   }
 
   .sidebar-brand {
@@ -448,6 +500,14 @@ function handleLogout() {
   .sidebar--open .brand-text,
   .sidebar--open .nav-label {
     display: initial;
+  }
+
+  .sidebar--open .nav-section {
+    padding: 0.6rem 0.7rem 0.35rem;
+  }
+
+  .sidebar--open .nav-section-label {
+    display: block;
   }
 
   .sidebar--open .sidebar-brand,
