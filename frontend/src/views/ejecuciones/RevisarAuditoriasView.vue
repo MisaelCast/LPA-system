@@ -398,6 +398,7 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
               <th>Tipo</th>
               <th>Área responsable</th>
               <th>Estado</th>
+              <th>Acción del auditor</th>
             </tr>
           </thead>
           <tbody>
@@ -412,6 +413,7 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
                   {{ estadoLabelHallazgo(h.estado) }}
                 </span>
               </td>
+              <td class="col-accion">{{ h.accion_correctiva || '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -605,6 +607,11 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
 .col-auditoria {
   font-weight: 600;
   color: var(--c-ink, #0f172a);
+}
+
+.col-accion {
+  max-width: 260px;
+  color: var(--c-ink-2, #334155);
 }
 
 .resultado {
