@@ -13,7 +13,7 @@ import {
   obtenerOpcionesFiltrosRevision,
 } from '@/services/ejecucion.service'
 import { listarHallazgos } from '@/services/hallazgo.service'
-import type { HallazgoDetallado } from '@/types/hallazgo'
+import type { HallazgoDetallado, HallazgoFiltros } from '@/types/hallazgo'
 
 const cargando = ref(false)
 const error = ref('')
@@ -22,6 +22,9 @@ const ejecuciones = ref<EjecucionAuditoriaListItem[]>([])
 const tab = ref<'auditorias' | 'hallazgos'>('auditorias')
 const hallazgos = ref<HallazgoDetallado[]>([])
 const hallazgosCargando = ref(false)
+const filtroHallazgos = ref<
+  '' | 'atrasados' | 'sin_actualizar' | 'cierre_pendiente' | 'reincidencia'
+>('')
 
 const areas = ref<Area[]>([])
 const celulas = ref<Celula[]>([])
@@ -50,7 +53,12 @@ onMounted(async () => {
 async function cargarHallazgos() {
   hallazgosCargando.value = true
   try {
-    hallazgos.value = await listarHallazgos({ solo_auditores: true })
+    const filtros: HallazgoFiltros = { solo_auditores: true }
+    if (filtroHallazgos.value === 'atrasados') filtros.atrasados = true
+    if (filtroHallazgos.value === 'sin_actualizar') filtros.sin_actualizar = true
+    if (filtroHallazgos.value === 'cierre_pendiente') filtros.cierre_pendiente = true
+    if (filtroHallazgos.value === 'reincidencia') filtros.reincidencia = true
+    hallazgos.value = await listarHallazgos(filtros)
   } catch {
     hallazgos.value = []
   } finally {
@@ -65,7 +73,8 @@ function etiquetaTipoHallazgo(tipo: string): string {
 }
 
 function estadoLabelHallazgo(estado: string): string {
-  if (estado === 'en_proceso') return 'En proceso'
+  if (estado === 'en_correccion') return 'En corrección'
+  if (estado === 'cierre_solicitado') return 'Cierre solicitado'
   if (estado === 'cerrado') return 'Cerrado'
   return 'Abierto'
 }
@@ -116,7 +125,8 @@ function limpiarFiltros() {
   cargar()
 }
 
-function formatearFecha(iso: string): string {
+function formatearFecha(iso: string | null): string {
+  if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   const dia = String(d.getDate()).padStart(2, '0')
@@ -378,6 +388,16 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
     </div>
 
     <div v-else class="hallazgos-tab">
+      <div class="filtros-supervision">
+        <select v-model="filtroHallazgos" @change="cargarHallazgos">
+          <option value="">Todos los hallazgos</option>
+          <option value="atrasados">Atrasados (fuera de fecha límite)</option>
+          <option value="sin_actualizar">Sin actualizar (más de 2 días)</option>
+          <option value="cierre_pendiente">Cierre pendiente de aprobar</option>
+          <option value="reincidencia">Reincidencias (cierre rechazado)</option>
+        </select>
+      </div>
+
       <div v-if="hallazgosCargando" class="msg msg-info">Cargando…</div>
 
       <div v-else-if="hallazgos.length === 0" class="state state-empty">
@@ -397,6 +417,8 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
               <th>Descripción</th>
               <th>Tipo</th>
               <th>Área responsable</th>
+              <th>Responsable</th>
+              <th>Fecha límite</th>
               <th>Estado</th>
               <th>Acción correctiva</th>
             </tr>
@@ -408,6 +430,11 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
               <td>{{ h.descripcion }}</td>
               <td>{{ etiquetaTipoHallazgo(h.tipo) }}</td>
               <td>{{ h.area_responsable_nombre || '—' }}</td>
+              <td>{{ h.responsable_nombre || '—' }}</td>
+              <td class="col-fecha" :class="{ 'fecha-atrasada': h.atrasado }">
+                {{ formatearFecha(h.fecha_limite) }}
+                <span v-if="h.atrasado" class="tag-atrasado">atrasado</span>
+              </td>
               <td>
                 <span class="badge" :class="'badge-' + h.estado">
                   {{ estadoLabelHallazgo(h.estado) }}
@@ -589,14 +616,49 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
   color: var(--c-danger-ink, #b91c1c);
 }
 
-.badge-en_proceso {
+.badge-en_correccion {
   background: var(--c-warn-soft, #fef3c7);
   color: var(--c-warn-ink, #92400e);
+}
+
+.badge-cierre_solicitado {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .badge-cerrado {
   background: var(--c-ok-soft, #dcfce7);
   color: var(--c-ok-ink, #166534);
+}
+
+.filtros-supervision {
+  margin-bottom: 1rem;
+}
+
+.filtros-supervision select {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--c-line-2, #d5dae3);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  font-size: 0.875rem;
+  color: var(--c-ink, #0f172a);
+}
+
+.fecha-atrasada {
+  color: var(--c-danger, #dc2626);
+  font-weight: 600;
+}
+
+.tag-atrasado {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--c-danger-soft, #fee2e2);
+  color: var(--c-danger-ink, #b91c1c);
 }
 
 .col-fecha {

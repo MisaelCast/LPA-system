@@ -47,10 +47,21 @@ const grupos = computed(() => [
   {
     titulo: 'MI TRABAJO',
     items: [
-      { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: !authStore.isAdmin },
-      { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: !authStore.isAdmin },
-      { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: !authStore.isAdmin },
-      { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: !authStore.isAdmin },
+      { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: !authStore.isAdmin && !authStore.isResponsable },
+      { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: !authStore.isAdmin && !authStore.isResponsable },
+      { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: !authStore.isAdmin && !authStore.isResponsable },
+      { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: !authStore.isAdmin && !authStore.isResponsable },
+    ].filter((e) => e.visible),
+  },
+  {
+    titulo: 'CORRECCIÓN',
+    items: [
+      {
+        to: '/mis-tickets',
+        label: 'Mis tickets',
+        icon: 'ticket',
+        visible: authStore.isResponsable,
+      },
     ].filter((e) => e.visible),
   },
   {
@@ -168,6 +179,10 @@ function handleLogout() {
               <template v-else-if="enlace.icon === 'flag'">
                 <path d="M6 4v16" />
                 <path d="M6 5h10l-1.8 3.5L16 12H6" />
+              </template>
+              <template v-else-if="enlace.icon === 'ticket'">
+                <path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z" />
+                <path d="M14 7v10" />
               </template>
               <template v-else-if="enlace.icon === 'pend'">
                 <circle cx="12" cy="12" r="8.6" />

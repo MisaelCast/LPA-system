@@ -6,10 +6,15 @@ import type {
   EstadoHallazgo,
   HallazgoDetallado,
   HallazgoFiltros,
+  ResponsableResumen,
+  Seguimiento,
 } from '@/types/hallazgo'
 import {
-  actualizarSeguimiento,
+  asignarResponsable,
   listarHallazgos,
+  listarHistorial,
+  listarResponsables,
+  resolverCierre,
 } from '@/services/hallazgo.service'
 import { obtenerAreasActivas } from '@/services/area.service'
 
@@ -23,24 +28,30 @@ const areas = ref<Area[]>([])
 
 const fEstado = ref<'' | EstadoHallazgo>('')
 const fAreaId = ref<number | null>(null)
+const fCierrePendiente = ref(false)
 
 const detalleAbierto = ref(false)
 const hallazgoSeleccionado = ref<HallazgoDetallado | null>(null)
+const historial = ref<Seguimiento[]>([])
+const responsables = ref<ResponsableResumen[]>([])
+const cargandoDetalle = ref(false)
 const guardando = ref(false)
 
-const formEstado = ref<EstadoHallazgo>('abierto')
-const formAreaId = ref<number | null>(null)
-const formAccion = ref('')
+const formResponsableId = ref<number | null>(null)
+const formFechaLimite = ref('')
+const formObservacion = ref('')
 
 const estados: { valor: EstadoHallazgo; label: string }[] = [
   { valor: 'abierto', label: 'Abierto' },
-  { valor: 'en_proceso', label: 'En proceso' },
+  { valor: 'en_correccion', label: 'En corrección' },
+  { valor: 'cierre_solicitado', label: 'Cierre solicitado' },
   { valor: 'cerrado', label: 'Cerrado' },
 ]
 
 const totales = computed(() => ({
   abierto: hallazgos.value.filter((h) => h.estado === 'abierto').length,
-  en_proceso: hallazgos.value.filter((h) => h.estado === 'en_proceso').length,
+  en_correccion: hallazgos.value.filter((h) => h.estado === 'en_correccion').length,
+  cierre_solicitado: hallazgos.value.filter((h) => h.estado === 'cierre_solicitado').length,
   cerrado: hallazgos.value.filter((h) => h.estado === 'cerrado').length,
 }))
 
@@ -48,6 +59,14 @@ const puedeEditar = computed(
   () =>
     hallazgoSeleccionado.value !== null &&
     authStore.usuario?.id === hallazgoSeleccionado.value.auditor_id,
+)
+const puedeAsignar = computed(
+  () => puedeEditar.value && hallazgoSeleccionado.value?.estado !== 'cerrado',
+)
+const puedeResolverCierre = computed(
+  () =>
+    puedeEditar.value &&
+    hallazgoSeleccionado.value?.estado === 'cierre_solicitado',
 )
 
 onMounted(async () => {
@@ -69,12 +88,11 @@ async function cargar() {
     const filtros: HallazgoFiltros = {}
     if (fEstado.value) filtros.estado = fEstado.value
     if (fAreaId.value) filtros.area_responsable_id = fAreaId.value
+    if (fCierrePendiente.value) filtros.cierre_pendiente = true
     if (authStore.isSupervisor || authStore.isGerente) filtros.solo_propios = true
     hallazgos.value = await listarHallazgos(filtros)
   } catch (err) {
-    error.value =
-      (err as { response?: { data?: { detail?: string } } })?.response?.data
-        ?.detail || 'Error al cargar los hallazgos.'
+    error.value = mensajeError(err, 'Error al cargar los hallazgos.')
   } finally {
     cargando.value = false
   }
@@ -83,7 +101,15 @@ async function cargar() {
 function limpiarFiltros() {
   fEstado.value = ''
   fAreaId.value = null
+  fCierrePendiente.value = false
   cargar()
+}
+
+function mensajeError(err: unknown, porDefecto: string): string {
+  return (
+    (err as { response?: { data?: { detail?: string } } })?.response?.data
+      ?.detail || porDefecto
+  )
 }
 
 function formatearFecha(iso: string | null): string {
@@ -98,6 +124,14 @@ function formatearFecha(iso: string | null): string {
   return `${dia}/${mes}/${anio} ${hh}:${mm}`
 }
 
+function aInputLocal(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const off = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - off).toISOString().slice(0, 16)
+}
+
 function etiquetaEstado(estado: EstadoHallazgo): string {
   return estados.find((e) => e.valor === estado)?.label || estado
 }
@@ -107,9 +141,16 @@ function chipTipoClase(tipo: string): string {
 }
 
 function etiquetaTipo(tipo: string): string {
-  if (tipo === 'R') return 'Mayor'
-  if (tipo === 'no_cumple') return 'No cumple'
-  return 'Menor'
+  const map: Record<string, string> = {
+    asignacion: 'Asignación',
+    comentario: 'Comentario',
+    accion_correctiva: 'Acción correctiva',
+    estado: 'Cambio de estado',
+    solicitud_cierre: 'Solicitud de cierre',
+    cierre_aprobado: 'Cierre aprobado',
+    cierre_rechazado: 'Cierre rechazado',
+  }
+  return map[tipo] || tipo
 }
 
 function etiquetaTipoLargo(tipo: string): string {
@@ -118,14 +159,29 @@ function etiquetaTipoLargo(tipo: string): string {
   return 'Hallazgo menor'
 }
 
-function abrirDetalle(h: HallazgoDetallado) {
+async function abrirDetalle(h: HallazgoDetallado) {
   hallazgoSeleccionado.value = h
-  formEstado.value = h.estado
-  formAreaId.value = h.area_responsable_id
-  formAccion.value = h.accion_correctiva || ''
+  formResponsableId.value = h.responsable_id
+  formFechaLimite.value = aInputLocal(h.fecha_limite)
+  formObservacion.value = ''
+  responsables.value = []
+  historial.value = []
   error.value = ''
   exito.value = ''
   detalleAbierto.value = true
+  cargandoDetalle.value = true
+  try {
+    const [hist, resp] = await Promise.all([
+      listarHistorial(h.id),
+      listarResponsables(h.id),
+    ])
+    historial.value = hist
+    responsables.value = resp
+  } catch {
+    /* silencioso */
+  } finally {
+    cargandoDetalle.value = false
+  }
 }
 
 function cerrarDetalle() {
@@ -133,28 +189,60 @@ function cerrarDetalle() {
   hallazgoSeleccionado.value = null
 }
 
-async function guardarSeguimiento() {
-  if (!hallazgoSeleccionado.value || !puedeEditar.value) return
+function actualizarEnLista(actualizado: HallazgoDetallado) {
+  const idx = hallazgos.value.findIndex((h) => h.id === actualizado.id)
+  if (idx !== -1) hallazgos.value[idx] = actualizado
+  hallazgoSeleccionado.value = actualizado
+}
+
+async function guardarAsignacion() {
+  const h = hallazgoSeleccionado.value
+  if (!h || formResponsableId.value === null) {
+    error.value = 'Selecciona un responsable.'
+    return
+  }
   guardando.value = true
   error.value = ''
   exito.value = ''
   try {
-    const actualizado = await actualizarSeguimiento(
-      hallazgoSeleccionado.value.id,
-      {
-        estado: formEstado.value,
-        area_responsable_id: formAreaId.value ?? undefined,
-        accion_correctiva: formAccion.value.trim() || null,
-      },
-    )
-    const idx = hallazgos.value.findIndex((h) => h.id === actualizado.id)
-    if (idx !== -1) hallazgos.value[idx] = actualizado
-    hallazgoSeleccionado.value = actualizado
-    exito.value = 'Seguimiento guardado correctamente.'
+    const actualizado = await asignarResponsable(h.id, {
+      responsable_id: formResponsableId.value,
+      fecha_limite: formFechaLimite.value
+        ? new Date(formFechaLimite.value).toISOString()
+        : null,
+    })
+    actualizarEnLista(actualizado)
+    formFechaLimite.value = aInputLocal(actualizado.fecha_limite)
+    historial.value = await listarHistorial(h.id)
+    exito.value = 'Responsable asignado.'
   } catch (err) {
-    error.value =
-      (err as { response?: { data?: { detail?: string } } })?.response?.data
-        ?.detail || 'Error al guardar el seguimiento.'
+    error.value = mensajeError(err, 'No se pudo asignar el responsable.')
+  } finally {
+    guardando.value = false
+  }
+}
+
+async function resolver(aprobar: boolean) {
+  const h = hallazgoSeleccionado.value
+  if (!h) return
+  if (!aprobar && !formObservacion.value.trim()) {
+    error.value = 'Indica qué falta corregir al rechazar el cierre.'
+    return
+  }
+  guardando.value = true
+  error.value = ''
+  exito.value = ''
+  try {
+    const actualizado = await resolverCierre(h.id, {
+      aprobar,
+      observacion: formObservacion.value.trim() || null,
+    })
+    actualizarEnLista(actualizado)
+    formObservacion.value = ''
+    historial.value = await listarHistorial(h.id)
+    exito.value = aprobar ? 'Cierre aprobado.' : 'Cierre devuelto al responsable.'
+  } catch (err) {
+    error.value = mensajeError(err, 'No se pudo resolver el cierre.')
   } finally {
     guardando.value = false
   }
@@ -165,9 +253,9 @@ async function guardarSeguimiento() {
   <div class="page">
     <header class="page-header">
       <div class="page-header-info">
-        <h1>Mis hallazgos</h1>
+        <h1>{{ authStore.isSupervisor || authStore.isGerente ? 'Hallazgos de mis auditorías' : 'Mis hallazgos' }}</h1>
         <p class="subtitle">
-          Hallazgos detectados en tus auditorías y a los que das seguimiento.
+          Hallazgos detectados en tus auditorías; asigna responsables y confirma cierres.
         </p>
       </div>
     </header>
@@ -178,8 +266,12 @@ async function guardarSeguimiento() {
         <span class="stat-value stat-abierto">{{ totales.abierto }}</span>
       </div>
       <div class="stat">
-        <span class="stat-label">En proceso</span>
-        <span class="stat-value stat-proceso">{{ totales.en_proceso }}</span>
+        <span class="stat-label">En corrección</span>
+        <span class="stat-value stat-proceso">{{ totales.en_correccion }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Cierre solicitado</span>
+        <span class="stat-value stat-cierre">{{ totales.cierre_solicitado }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Cerrados</span>
@@ -202,6 +294,11 @@ async function guardarSeguimiento() {
         </option>
       </select>
 
+      <label class="chk">
+        <input v-model="fCierrePendiente" type="checkbox" @change="cargar" />
+        Solo cierres pendientes
+      </label>
+
       <button class="btn-secondary" @click="limpiarFiltros">Limpiar</button>
     </div>
 
@@ -222,7 +319,8 @@ async function guardarSeguimiento() {
             <th>Auditoría</th>
             <th>Descripción</th>
             <th>Tipo</th>
-            <th>Área responsable</th>
+            <th>Área</th>
+            <th>Responsable</th>
             <th>Estado</th>
             <th class="col-acciones">Acciones</th>
           </tr>
@@ -233,20 +331,17 @@ async function guardarSeguimiento() {
             <td class="col-auditoria">{{ h.auditoria_nombre }}</td>
             <td class="col-desc">
               {{ h.descripcion }}
-              <span
-                v-if="h.evidencias.length"
-                class="foto-contador"
-                :title="`${h.evidencias.length} foto(s) adjunta(s)`"
-              >
+              <span v-if="h.evidencias.length" class="foto-contador">
                 {{ h.evidencias.length }} foto{{ h.evidencias.length === 1 ? '' : 's' }}
               </span>
             </td>
             <td>
               <span class="chip-tipo" :class="chipTipoClase(h.tipo)">
-                {{ etiquetaTipo(h.tipo) }}
+                {{ h.tipo === 'R' ? 'Mayor' : h.tipo === 'no_cumple' ? 'No cumple' : 'Menor' }}
               </span>
             </td>
             <td>{{ h.area_responsable_nombre || '—' }}</td>
+            <td>{{ h.responsable_nombre || '—' }}</td>
             <td>
               <span class="badge" :class="'badge-' + h.estado">
                 {{ etiquetaEstado(h.estado) }}
@@ -277,12 +372,11 @@ async function guardarSeguimiento() {
             <span class="badge badge-lg" :class="'badge-' + hallazgoSeleccionado.estado">
               {{ etiquetaEstado(hallazgoSeleccionado.estado) }}
             </span>
-            <span
-              class="chip-tipo"
-              :class="chipTipoClase(hallazgoSeleccionado.tipo)"
-            >
+            <span class="chip-tipo" :class="chipTipoClase(hallazgoSeleccionado.tipo)">
               {{ etiquetaTipoLargo(hallazgoSeleccionado.tipo) }}
             </span>
+            <span v-if="hallazgoSeleccionado.atrasado" class="tag-atrasado">atrasado</span>
+            <span v-if="hallazgoSeleccionado.reincidente" class="tag-reincidente">reincidente</span>
           </div>
 
           <dl class="detalle-grid">
@@ -302,12 +396,12 @@ async function guardarSeguimiento() {
               <dd>{{ hallazgoSeleccionado.area_responsable_nombre || '—' }}</dd>
             </div>
             <div class="dato">
-              <dt>Célula</dt>
-              <dd>{{ hallazgoSeleccionado.celula_numero ?? '—' }}</dd>
+              <dt>Responsable actual</dt>
+              <dd>{{ hallazgoSeleccionado.responsable_nombre || 'Sin asignar' }}</dd>
             </div>
             <div class="dato">
-              <dt>Registrado</dt>
-              <dd>{{ formatearFecha(hallazgoSeleccionado.fecha_creacion) }}</dd>
+              <dt>Fecha límite</dt>
+              <dd>{{ formatearFecha(hallazgoSeleccionado.fecha_limite) }}</dd>
             </div>
             <div class="dato">
               <dt>Fecha de cierre</dt>
@@ -321,7 +415,7 @@ async function guardarSeguimiento() {
           </section>
 
           <section class="bloque">
-            <h4>Acción correctiva</h4>
+            <h4>Acción correctiva registrada</h4>
             <p v-if="hallazgoSeleccionado.accion_correctiva">
               {{ hallazgoSeleccionado.accion_correctiva }}
             </p>
@@ -338,69 +432,86 @@ async function guardarSeguimiento() {
                 target="_blank"
                 rel="noopener"
                 class="evidencia-thumb"
-                :title="`Ver evidencia #${ev.id}`"
+                :title="ev.tipo === 'correccion' ? 'Evidencia de corrección' : 'Evidencia original'"
               >
                 <img :src="ev.url ?? undefined" :alt="`Evidencia ${ev.id}`" loading="lazy" />
+                <span class="evidencia-tipo">{{ ev.tipo === 'correccion' ? 'corrección' : 'original' }}</span>
               </a>
             </div>
           </section>
 
-          <!-- Solo el auditor que registró el hallazgo puede editar -->
-          <section v-if="puedeEditar" class="seguimiento-form">
-            <h4>Actualizar seguimiento</h4>
-
+          <!-- Asignar / reasignar responsable -->
+          <section v-if="puedeAsignar" class="seguimiento-form">
+            <h4>Asignar responsable</h4>
             <label class="field">
-              <span>Estado</span>
-              <select v-model="formEstado">
-                <option v-for="e in estados" :key="e.valor" :value="e.valor">
-                  {{ e.label }}
+              <span>Responsable de Manufactura</span>
+              <select v-model.number="formResponsableId">
+                <option :value="null" disabled>Seleccione el responsable</option>
+                <option v-for="r in responsables" :key="r.id" :value="r.id">
+                  {{ r.nombre }}
                 </option>
               </select>
+              <small v-if="!responsables.length" class="ayuda">
+                No hay Responsables de Manufactura registrados para el área.
+              </small>
             </label>
-
             <label class="field">
-              <span>Área responsable</span>
-              <select v-model.number="formAreaId">
-                <option :value="null" disabled>Seleccione el área</option>
-                <option v-for="a in areas" :key="a.id" :value="a.id">
-                  {{ a.nombre }}
-                </option>
-              </select>
+              <span>Fecha límite</span>
+              <input v-model="formFechaLimite" type="datetime-local" />
             </label>
-
-            <label class="field">
-              <span>Acción correctiva</span>
-              <textarea
-                v-model="formAccion"
-                class="input"
-                rows="3"
-                placeholder="Describe la acción correctiva a realizar..."
-              ></textarea>
-            </label>
-
-            <p v-if="formEstado === 'cerrado'" class="aviso-cierre">
-              Al guardar como cerrado se registrará la fecha de cierre.
-            </p>
-
-            <p v-if="error" class="msg msg-err">{{ error }}</p>
-            <p v-if="exito" class="msg msg-ok">{{ exito }}</p>
+            <div class="acciones-fila">
+              <button class="btn-primary" :disabled="guardando" @click="guardarAsignacion">
+                {{ guardando ? 'Guardando…' : 'Asignar responsable' }}
+              </button>
+            </div>
           </section>
 
-          <p v-else class="aviso-lectura">
-            Solo el auditor que registró el hallazgo puede modificar su seguimiento.
+          <!-- Resolver solicitud de cierre -->
+          <section v-if="puedeResolverCierre" class="seccion-cierre">
+            <h4>Solicitud de cierre pendiente</h4>
+            <label class="field">
+              <span>Observación (obligatoria para rechazar)</span>
+              <textarea
+                v-model="formObservacion"
+                class="input"
+                rows="3"
+                placeholder="¿Qué falta corregir? / comentario de aprobación..."
+              ></textarea>
+            </label>
+            <div class="acciones-fila">
+              <button class="btn-primary" :disabled="guardando" @click="resolver(true)">
+                Aprobar cierre
+              </button>
+              <button class="btn-secondary" :disabled="guardando" @click="resolver(false)">
+                Rechazar cierre
+              </button>
+            </div>
+          </section>
+          <p v-if="!puedeEditar" class="aviso-lectura">
+            Solo el auditor que registró el hallazgo puede asignar responsables o resolver el cierre.
           </p>
+
+          <p v-if="error" class="msg msg-err">{{ error }}</p>
+          <p v-if="exito" class="msg msg-ok">{{ exito }}</p>
+
+          <section class="bloque">
+            <h4>Historial</h4>
+            <div v-if="cargandoDetalle" class="msg msg-info">Cargando…</div>
+            <ul v-else-if="historial.length" class="timeline">
+              <li v-for="h in historial" :key="h.id" class="timeline-item">
+                <span class="timeline-tipo">{{ etiquetaTipo(h.tipo) }}</span>
+                <span class="timeline-meta">
+                  {{ h.usuario_nombre }} · {{ formatearFecha(h.fecha_creacion) }}
+                </span>
+                <span v-if="h.detalle" class="timeline-detalle">{{ h.detalle }}</span>
+              </li>
+            </ul>
+            <p v-else class="vacio">Sin movimientos registrados.</p>
+          </section>
         </div>
 
         <footer class="modal-footer">
           <button class="btn-secondary" @click="cerrarDetalle">Cerrar</button>
-          <button
-            v-if="puedeEditar"
-            class="btn-primary"
-            :disabled="guardando"
-            @click="guardarSeguimiento"
-          >
-            {{ guardando ? 'Guardando…' : 'Guardar seguimiento' }}
-          </button>
         </footer>
       </div>
     </div>
@@ -410,7 +521,7 @@ async function guardarSeguimiento() {
 <style scoped>
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;
   margin-bottom: 1.25rem;
 }
@@ -449,6 +560,10 @@ async function guardarSeguimiento() {
   color: var(--c-primary, #2563eb);
 }
 
+.stat-cierre {
+  color: #6d28d9;
+}
+
 .stat-cerrado {
   color: var(--c-ok, #16a34a);
 }
@@ -457,6 +572,7 @@ async function guardarSeguimiento() {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
+  align-items: center;
   margin-bottom: 1.1rem;
 }
 
@@ -467,6 +583,14 @@ async function guardarSeguimiento() {
   background: var(--c-surface, #fff);
   font-size: 0.875rem;
   color: var(--c-ink, #0f172a);
+}
+
+.chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--c-ink-2, #334155);
 }
 
 .col-fecha {
@@ -496,34 +620,6 @@ async function guardarSeguimiento() {
   white-space: nowrap;
 }
 
-.evidencias-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.evidencia-thumb {
-  width: 84px;
-  height: 84px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--c-line, #e6e9ef);
-  background: var(--c-surface-3, #f1f5f9);
-  display: block;
-  transition: border-color 0.15s ease;
-}
-
-.evidencia-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.evidencia-thumb:hover {
-  border-color: var(--c-primary, #2563eb);
-}
-
 .chip-tipo {
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
@@ -547,9 +643,14 @@ async function guardarSeguimiento() {
   color: var(--c-warn-ink, #92400e);
 }
 
-.badge-en_proceso {
+.badge-en_correccion {
   background: var(--c-primary-soft, #eef2ff);
   color: var(--c-primary-active, #1e40af);
+}
+
+.badge-cierre_solicitado {
+  background: #ede9fe;
+  color: #6d28d9;
 }
 
 .badge-cerrado {
@@ -562,11 +663,30 @@ async function guardarSeguimiento() {
   font-size: 0.78rem;
 }
 
-.detalle-modal {
-  width: min(640px, calc(100% - 2rem));
+.tag-atrasado,
+.tag-reincidente {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
-/* --- Detalle estructurado --- */
+.tag-atrasado {
+  background: var(--c-danger-soft, #fee2e2);
+  color: var(--c-danger-ink, #b91c1c);
+}
+
+.tag-reincidente {
+  background: var(--c-warn-soft, #fef3c7);
+  color: var(--c-warn-ink, #92400e);
+}
+
+.detalle-modal {
+  width: min(680px, calc(100% - 2rem));
+}
+
 .detalle-encabezado {
   display: flex;
   align-items: center;
@@ -605,12 +725,14 @@ async function guardarSeguimiento() {
   overflow-wrap: anywhere;
 }
 
-.bloque {
+.bloque,
+.seccion-cierre {
   margin-top: 1rem;
 }
 
 .bloque h4,
-.seguimiento-form h4 {
+.seguimiento-form h4,
+.seccion-cierre h4 {
   margin: 0 0 0.4rem;
   font-size: 0.72rem;
   font-weight: 700;
@@ -634,13 +756,54 @@ async function guardarSeguimiento() {
   font-style: italic;
 }
 
-.seguimiento-form {
+.evidencias-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.evidencia-thumb {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface-3, #f1f5f9);
+  display: block;
+}
+
+.evidencia-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.evidencia-tipo {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 0.58rem;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.seguimiento-form,
+.seccion-cierre {
   margin-top: 1.25rem;
   padding-top: 1.1rem;
   border-top: 1px solid var(--c-line, #e6e9ef);
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.seccion-cierre {
+  border-top-color: #ddd6fe;
 }
 
 .field {
@@ -656,6 +819,7 @@ async function guardarSeguimiento() {
 }
 
 .field select,
+.field input,
 .field textarea {
   padding: 0.55rem 0.75rem;
   border: 1px solid var(--c-line-2, #d5dae3);
@@ -672,10 +836,20 @@ async function guardarSeguimiento() {
   resize: vertical;
 }
 
-.aviso-cierre {
-  margin: 0;
+.ayuda {
+  font-size: 0.75rem;
+  color: var(--c-ink-3, #64748b);
+}
+
+.acciones-fila {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.btn-sm {
+  padding: 0.4rem 0.75rem;
   font-size: 0.82rem;
-  color: var(--c-ok, #16a34a);
 }
 
 .aviso-lectura {
@@ -688,9 +862,39 @@ async function guardarSeguimiento() {
   text-align: center;
 }
 
-.btn-sm {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.82rem;
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--c-line-2, #d5dae3);
+  background: var(--c-surface-3, #f8fafc);
+  border-radius: 0 var(--r-md, 10px) var(--r-md, 10px) 0;
+}
+
+.timeline-tipo {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--c-ink, #0f172a);
+}
+
+.timeline-meta {
+  font-size: 0.72rem;
+  color: var(--c-ink-3, #64748b);
+}
+
+.timeline-detalle {
+  font-size: 0.85rem;
+  color: var(--c-ink-2, #334155);
 }
 
 @media (max-width: 560px) {

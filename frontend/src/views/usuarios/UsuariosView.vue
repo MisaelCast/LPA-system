@@ -78,8 +78,17 @@ const rolSeleccionado = computed(() =>
 const esAuditor = computed(() => rolSeleccionado.value?.nombre === 'Auditor')
 const esSupervisor = computed(() => rolSeleccionado.value?.nombre === 'Supervisor')
 const esGerente = computed(() => rolSeleccionado.value?.nombre === 'Gerente')
+const esResponsable = computed(
+  () => rolSeleccionado.value?.nombre === 'Responsable de Manufactura',
+)
 
-const esRolAsignable = computed(() => esAuditor.value || esSupervisor.value || esGerente.value)
+const esRolAsignable = computed(
+  () =>
+    esAuditor.value ||
+    esSupervisor.value ||
+    esGerente.value ||
+    esResponsable.value,
+)
 
 const areasDisponibles = computed(() => asignacionOpciones.value?.areas || [])
 const celulasDisponibles = computed(() => asignacionOpciones.value?.celulas || [])
@@ -129,6 +138,9 @@ function asignacionPayload() {
     }
   }
   if (esSupervisor.value) {
+    return { area_ids: formAreasIds.value, celula_ids: [], supervisor_ids: [] }
+  }
+  if (esResponsable.value) {
     return { area_ids: formAreasIds.value, celula_ids: [], supervisor_ids: [] }
   }
   if (esGerente.value) {
@@ -214,7 +226,7 @@ async function abrirModalEditar(u: Usuario) {
   formCelulasIds.value = []
   formSupervisorIds.value = []
   formError.value = ''
-  if (['Auditor', 'Supervisor', 'Gerente'].includes(u.rol_nombre)) {
+  if (['Auditor', 'Supervisor', 'Gerente', 'Responsable de Manufactura'].includes(u.rol_nombre)) {
     try {
       const asignacion = await obtenerAsignacion(u.id)
       formAreasIds.value = asignacion.area_ids
@@ -587,7 +599,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <p class="asignacion-hint">
                 {{ esAuditor
                   ? 'Si un área queda sin células marcadas, el auditor cubre todas sus células.'
-                  : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
+                  : esResponsable
+                    ? 'El responsable atenderá los hallazgos del área seleccionada.'
+                    : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
               </p>
             </template>
           </div>
@@ -691,7 +705,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <p class="asignacion-hint">
                 {{ esAuditor
                   ? 'Si un área queda sin células marcadas, el auditor cubre todas sus células.'
-                  : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
+                  : esResponsable
+                    ? 'El responsable atenderá los hallazgos del área seleccionada.'
+                    : 'El supervisor aplica sus auditorías en el área seleccionada.' }}
               </p>
             </template>
           </div>

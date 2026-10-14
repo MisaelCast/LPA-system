@@ -59,21 +59,31 @@ const router = createRouter({
           path: 'ejecutar',
           name: 'ejecutar',
           component: () => import('@/views/ejecuciones/EjecucionAuditoriaView.vue'),
+          meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
         },
         {
           path: 'mis-pendientes',
           name: 'mis-pendientes',
           component: () => import('@/views/ejecuciones/PendientesView.vue'),
+          meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
         },
         {
           path: 'auditorias-realizadas',
           name: 'auditorias-realizadas',
           component: () => import('@/views/ejecuciones/AuditoriasRealizadasView.vue'),
+          meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
         },
         {
           path: 'hallazgos',
           name: 'hallazgos',
           component: () => import('@/views/hallazgos/HallazgosView.vue'),
+          meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
+        },
+        {
+          path: 'mis-tickets',
+          name: 'mis-tickets',
+          component: () => import('@/views/tickets/MisTicketsView.vue'),
+          meta: { roles: ['Responsable de Manufactura'] },
         },
         {
           path: 'revision-auditorias',
