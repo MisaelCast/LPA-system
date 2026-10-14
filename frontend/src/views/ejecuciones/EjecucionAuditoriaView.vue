@@ -17,7 +17,11 @@ import {
   crearHallazgo,
   actualizarHallazgo,
   eliminarHallazgo,
+  subirEvidencia,
+  listarEvidencias,
+  eliminarEvidencia,
 } from '@/services/hallazgo.service'
+import type { Evidencia } from '@/types/hallazgo'
 import { obtenerAreasActivas } from '@/services/area.service'
 
 const router = useRouter()
@@ -38,6 +42,11 @@ const hallazgosInputs = ref<Record<number, string>>({})
 const hallazgosAreas = ref<Record<number, number | null>>({})
 const hallazgosGuardando = ref<Record<number, boolean>>({})
 const hallazgosError = ref<Record<number, string>>({})
+const hallazgosFotos = ref<Record<number, Evidencia[]>>({})
+const fotosPendientes = ref<Record<number, { file: File; preview: string }[]>>({})
+const fotosSubiendo = ref<Record<number, boolean>>({})
+const inputFotos = ref<HTMLInputElement | null>(null)
+const criterioFotosActivo = ref<CriterioRespuesta | null>(null)
 
 const criterios = computed(() => ejecucion.value?.criterios || [])
 const respondidos = computed(() =>
@@ -213,6 +222,100 @@ function sincronizarBorradorHallazgos() {
   hallazgosInputs.value = merged
   hallazgosError.value = {}
   hallazgosGuardando.value = {}
+  void cargarFotosExistentes()
+}
+
+async function cargarFotosExistentes() {
+  if (!ejecucion.value) return
+  const conHallazgo = criterios.value.filter((c) => c.hallazgo_id !== null)
+  await Promise.all(
+    conHallazgo.map(async (c) => {
+      try {
+        hallazgosFotos.value[c.id] = await listarEvidencias(c.hallazgo_id!)
+      } catch {
+        /* sin fotos o sin permiso: se omite en silencio */
+      }
+    }),
+  )
+}
+
+function abrirSelectorFotos(criterio: CriterioRespuesta) {
+  criterioFotosActivo.value = criterio
+  inputFotos.value?.click()
+}
+
+function onFotosSeleccionadas(event: Event) {
+  const input = event.target as HTMLInputElement
+  const criterio = criterioFotosActivo.value
+  if (!criterio || !input.files?.length) return
+  const nuevos: { file: File; preview: string }[] = []
+  for (const file of Array.from(input.files)) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      hallazgosError.value[criterio.id] =
+        'Formato no permitido. Usa archivos JPG, PNG o WEBP.'
+      continue
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      hallazgosError.value[criterio.id] = 'La imagen supera el límite de 5 MB.'
+      continue
+    }
+    nuevos.push({ file, preview: URL.createObjectURL(file) })
+  }
+  if (nuevos.length) {
+    fotosPendientes.value[criterio.id] = [
+      ...(fotosPendientes.value[criterio.id] ?? []),
+      ...nuevos,
+    ]
+  }
+  input.value = ''
+}
+
+function quitarFotoPendiente(criterioId: number, indice: number) {
+  const lista = fotosPendientes.value[criterioId] ?? []
+  const pendiente = lista[indice]
+  if (pendiente) {
+    URL.revokeObjectURL(pendiente.preview)
+  }
+  fotosPendientes.value[criterioId] = lista.filter((_, i) => i !== indice)
+}
+
+async function subirFotosPendientes(criterioId: number, hallazgoId: number) {
+  const pendientes = fotosPendientes.value[criterioId] ?? []
+  if (!pendientes.length) return
+  fotosSubiendo.value[criterioId] = true
+  try {
+    for (const pendiente of pendientes) {
+      const evidencia = await subirEvidencia(hallazgoId, pendiente.file)
+      URL.revokeObjectURL(pendiente.preview)
+      hallazgosFotos.value[criterioId] = [
+        ...(hallazgosFotos.value[criterioId] ?? []),
+        evidencia,
+      ]
+    }
+    fotosPendientes.value[criterioId] = []
+  } finally {
+    fotosSubiendo.value[criterioId] = false
+  }
+}
+
+async function eliminarFoto(criterioId: number, evidenciaId: number) {
+  try {
+    await eliminarEvidencia(evidenciaId)
+    hallazgosFotos.value[criterioId] = (
+      hallazgosFotos.value[criterioId] ?? []
+    ).filter((e) => e.id !== evidenciaId)
+  } catch (err) {
+    mostrarError('No se pudo eliminar la foto', err)
+  }
+}
+
+function limpiarFotos(criterioId: number) {
+  for (const pendiente of fotosPendientes.value[criterioId] ?? []) {
+    URL.revokeObjectURL(pendiente.preview)
+  }
+  delete fotosPendientes.value[criterioId]
+  hallazgosFotos.value[criterioId] = []
+  delete fotosSubiendo.value[criterioId]
 }
 
 async function seleccionarValor(criterio: CriterioRespuesta, valor: string) {
@@ -240,6 +343,7 @@ async function quitarHallazgo(criterio: CriterioRespuesta) {
     delete hallazgosInputs.value[criterio.id]
     delete hallazgosAreas.value[criterio.id]
     delete hallazgosError.value[criterio.id]
+    limpiarFotos(criterio.id)
   } catch (err) {
     mostrarError('No se pudo eliminar el hallazgo', err)
   }
@@ -300,6 +404,13 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
       crit.hallazgo_id = creado.id
       crit.hallazgo_descripcion = creado.descripcion
       hallazgosInputs.value[crit.id] = creado.descripcion
+    }
+    try {
+      await subirFotosPendientes(crit.id, crit.hallazgo_id!)
+    } catch {
+      hallazgosError.value[crit.id] =
+        'El hallazgo se guardó, pero no se pudieron subir las fotos. Intenta de nuevo.'
+      return
     }
     hallazgosError.value[crit.id] = ''
     exito.value = 'Hallazgo guardado correctamente.'
@@ -404,6 +515,15 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
     <div v-if="error" class="msg error">{{ error }}</div>
     <div v-if="exito" class="msg success">{{ exito }}</div>
+
+    <input
+      ref="inputFotos"
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      multiple
+      hidden
+      @change="onFotosSeleccionadas"
+    />
 
     <!-- Paso 1: Seleccionar auditoría -->
     <div v-if="paso === 'seleccionar'" class="seleccion">
@@ -558,6 +678,58 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                   placeholder="Describe el hallazgo detectado..."
                   :disabled="soloLectura"
                 ></textarea>
+                <div class="hallazgo-fotos">
+                  <button
+                    type="button"
+                    class="btn small ghost"
+                    :disabled="soloLectura || fotosSubiendo[fila.criterio.id]"
+                    @click="abrirSelectorFotos(fila.criterio)"
+                  >
+                    {{ fotosSubiendo[fila.criterio.id] ? 'Subiendo…' : 'Agregar foto' }}
+                  </button>
+                  <div
+                    v-if="
+                      (hallazgosFotos[fila.criterio.id]?.length ?? 0) > 0 ||
+                      (fotosPendientes[fila.criterio.id]?.length ?? 0) > 0
+                    "
+                    class="fotos-grid"
+                  >
+                    <div
+                      v-for="foto in hallazgosFotos[fila.criterio.id]"
+                      :key="'ev-' + foto.id"
+                      class="foto-thumb"
+                    >
+                      <a :href="foto.url ?? undefined" target="_blank" rel="noopener">
+                        <img :src="foto.url ?? undefined" alt="Evidencia" />
+                      </a>
+                      <button
+                        v-if="!soloLectura"
+                        type="button"
+                        class="foto-quitar"
+                        title="Eliminar foto"
+                        @click="eliminarFoto(fila.criterio.id, foto.id)"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div
+                      v-for="(pendiente, idx) in fotosPendientes[fila.criterio.id]"
+                      :key="'pend-' + idx"
+                      class="foto-thumb pendiente"
+                    >
+                      <img :src="pendiente.preview" alt="Foto pendiente" />
+                      <span class="foto-etiqueta">pendiente</span>
+                      <button
+                        type="button"
+                        class="foto-quitar"
+                        title="Quitar foto"
+                        @click="quitarFotoPendiente(fila.criterio.id, idx)"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 <div class="hallazgo-acciones">
                   <button
                     class="btn small"
@@ -1036,6 +1208,85 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   gap: 0.5rem;
   margin-top: 0.6rem;
   flex-wrap: wrap;
+}
+
+.btn.ghost {
+  background: transparent;
+  border: 1px dashed var(--c-line, #cbd5e1);
+  color: var(--c-ink-2, #334155);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--c-ink-2, #334155);
+}
+
+/* --- Fotos de evidencia --- */
+.hallazgo-fotos {
+  margin-top: 0.6rem;
+}
+
+.fotos-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.foto-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface, #fff);
+}
+
+.foto-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.foto-thumb.pendiente {
+  opacity: 0.85;
+  border-style: dashed;
+}
+
+.foto-etiqueta {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-size: 0.6rem;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+}
+
+.foto-quitar {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.foto-quitar:hover {
+  background: var(--c-danger, #dc2626);
 }
 
 /* --- Acciones finales --- */

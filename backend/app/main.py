@@ -17,6 +17,7 @@ from app.api.capas import router as capas_router
 from app.api.celulas import router as celulas_router
 from app.api.criterios import router as criterios_router
 from app.api.ejecuciones_auditoria import router as ejecuciones_auditoria_router
+from app.api.evidencias import router as evidencias_router
 from app.api.frecuencias import router as frecuencias_router
 from app.api.hallazgos import router as hallazgos_router
 from app.api.roles import router as roles_router
@@ -100,6 +101,7 @@ app.include_router(auditorias_router)
 app.include_router(criterios_router)
 app.include_router(ejecuciones_auditoria_router)
 app.include_router(hallazgos_router)
+app.include_router(evidencias_router)
 
 
 @app.get("/")

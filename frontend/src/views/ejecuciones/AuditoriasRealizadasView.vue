@@ -11,6 +11,8 @@ import {
   obtenerEjecucionDetalle,
   obtenerAuditoriasDisponibles,
 } from '@/services/ejecucion.service'
+import { listarEvidencias } from '@/services/hallazgo.service'
+import type { Evidencia } from '@/types/hallazgo'
 
 const router = useRouter()
 
@@ -27,6 +29,7 @@ const fFechaHasta = ref('')
 const detalleAbierto = ref(false)
 const detalleCargando = ref(false)
 const detalle = ref<EjecucionAuditoriaDetalle | null>(null)
+const evidenciasPorHallazgo = ref<Record<number, Evidencia[]>>({})
 
 onMounted(async () => {
   await Promise.all([cargar(), cargarAuditorias()])
@@ -101,8 +104,10 @@ async function abrirDetalle(e: EjecucionAuditoriaListItem) {
   detalleAbierto.value = true
   detalleCargando.value = true
   detalle.value = null
+  evidenciasPorHallazgo.value = {}
   try {
     detalle.value = await obtenerEjecucionDetalle(e.id)
+    await cargarEvidencias()
   } catch (err) {
     error.value =
       (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -113,9 +118,25 @@ async function abrirDetalle(e: EjecucionAuditoriaListItem) {
   }
 }
 
+async function cargarEvidencias() {
+  const ids = (detalle.value?.criterios ?? [])
+    .map((c) => c.hallazgo_id)
+    .filter((id): id is number => id !== null)
+  await Promise.all(
+    ids.map(async (id) => {
+      try {
+        evidenciasPorHallazgo.value[id] = await listarEvidencias(id)
+      } catch {
+        evidenciasPorHallazgo.value[id] = []
+      }
+    }),
+  )
+}
+
 function cerrarDetalle() {
   detalleAbierto.value = false
   detalle.value = null
+  evidenciasPorHallazgo.value = {}
 }
 
 function continuar(e: EjecucionAuditoriaListItem) {
@@ -152,6 +173,11 @@ function hallazgoSufijo(valor: string | null): string {
   if (valor === 'R') return ' (mayor)'
   if (valor === 'A') return ' (menor)'
   return ''
+}
+
+function evidenciasDe(hallazgoId: number | null): Evidencia[] {
+  if (hallazgoId === null) return []
+  return evidenciasPorHallazgo.value[hallazgoId] ?? []
 }
 </script>
 
@@ -412,6 +438,22 @@ function hallazgoSufijo(valor: string | null): string {
                   Hallazgo{{ hallazgoSufijo(c.respuesta_valor) }}:
                   {{ c.hallazgo_descripcion }}
                 </div>
+                <div
+                  v-if="evidenciasDe(c.hallazgo_id).length"
+                  class="criterio-detalle-evidencias"
+                >
+                  <a
+                    v-for="ev in evidenciasDe(c.hallazgo_id)"
+                    :key="ev.id"
+                    :href="ev.url ?? undefined"
+                    target="_blank"
+                    rel="noopener"
+                    class="evidencia-thumb"
+                    :title="`Ver evidencia #${ev.id}`"
+                  >
+                    <img :src="ev.url ?? undefined" :alt="`Evidencia ${ev.id}`" loading="lazy" />
+                  </a>
+                </div>
               </div>
             </section>
           </template>
@@ -586,5 +628,34 @@ function hallazgoSufijo(valor: string | null): string {
   margin-top: 0.45rem;
   font-size: 0.82rem;
   color: var(--c-danger, #dc2626);
+}
+
+.criterio-detalle-evidencias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.evidencia-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface-3, #f1f5f9);
+  display: block;
+  transition: border-color 0.15s ease;
+}
+
+.evidencia-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.evidencia-thumb:hover {
+  border-color: var(--c-primary, #2563eb);
 }
 </style>

@@ -14,12 +14,14 @@ from app.models.respuesta import Respuesta
 from app.models.usuario import Usuario
 from app.repositories.hallazgo_repository import HallazgoRepository
 from app.repositories.respuesta_repository import RespuestaRepository
+from app.schemas.evidencia import EvidenciaOut
 from app.schemas.hallazgo import (
     HallazgoCreate,
     HallazgoDetallado,
     HallazgoSeguimientoUpdate,
     HallazgoUpdate,
 )
+from app.services.evidencia_service import EvidenciaService, url_firmada
 
 
 _VALORES_CON_HALLAZGO: set[str] = {"A", "R", "no_cumple"}
@@ -82,6 +84,16 @@ class HallazgoService:
             if area_responsable is not None:
                 area_responsable_nombre = area_responsable.nombre
 
+        evidencias = [
+            EvidenciaOut(
+                id=e.id or 0,
+                fecha_carga=e.fecha_carga,
+                tipo_archivo=e.tipo_archivo,
+                url=url_firmada(e.ruta_archivo),
+            )
+            for e in sorted(hallazgo.evidencias, key=lambda e: e.id or 0)
+        ]
+
         return HallazgoDetallado(
             id=hallazgo.id,
             descripcion=hallazgo.descripcion,
@@ -104,6 +116,7 @@ class HallazgoService:
             auditor_id=ejecucion.usuario_id,
             celula_id=celula_id,
             celula_numero=celula_numero,
+            evidencias=evidencias,
         )
 
     def crear(self, datos: HallazgoCreate, usuario: Usuario) -> HallazgoDetallado:
@@ -238,6 +251,7 @@ class HallazgoService:
                     "eliminar este hallazgo."
                 )
 
+        EvidenciaService(self._session).eliminar_de_hallazgo(hallazgo)
         self._repo.eliminar(hallazgo)
 
     def listar_por_ejecucion(

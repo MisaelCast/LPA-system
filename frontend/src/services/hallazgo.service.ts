@@ -1,5 +1,6 @@
 import api from '@/api/api'
 import type {
+  Evidencia,
   HallazgoCreate,
   HallazgoDetallado,
   HallazgoFiltros,
@@ -63,4 +64,25 @@ export function listarHallazgosDeEjecucion(
       `/ejecuciones-auditoria/ejecuciones-auditoria/${ejecucionId}/hallazgos`,
     )
     .then((res) => res.data)
+}
+
+export function subirEvidencia(
+  hallazgoId: number,
+  archivo: File,
+): Promise<Evidencia> {
+  const formData = new FormData()
+  formData.append('archivo', archivo)
+  return api
+    .post<Evidencia>(`/hallazgos/${hallazgoId}/evidencias`, formData)
+    .then((res) => res.data)
+}
+
+export function listarEvidencias(hallazgoId: number): Promise<Evidencia[]> {
+  return api
+    .get<Evidencia[]>(`/hallazgos/${hallazgoId}/evidencias`)
+    .then((res) => res.data)
+}
+
+export function eliminarEvidencia(evidenciaId: number): Promise<void> {
+  return api.delete(`/evidencias/${evidenciaId}`).then(() => undefined)
 }

@@ -231,7 +231,16 @@ async function guardarSeguimiento() {
           <tr v-for="h in hallazgos" :key="h.id" class="row" @click="abrirDetalle(h)">
             <td class="col-fecha">{{ formatearFecha(h.fecha_creacion) }}</td>
             <td class="col-auditoria">{{ h.auditoria_nombre }}</td>
-            <td class="col-desc">{{ h.descripcion }}</td>
+            <td class="col-desc">
+              {{ h.descripcion }}
+              <span
+                v-if="h.evidencias.length"
+                class="foto-contador"
+                :title="`${h.evidencias.length} foto(s) adjunta(s)`"
+              >
+                {{ h.evidencias.length }} foto{{ h.evidencias.length === 1 ? '' : 's' }}
+              </span>
+            </td>
             <td>
               <span class="chip-tipo" :class="chipTipoClase(h.tipo)">
                 {{ etiquetaTipo(h.tipo) }}
@@ -317,6 +326,23 @@ async function guardarSeguimiento() {
               {{ hallazgoSeleccionado.accion_correctiva }}
             </p>
             <p v-else class="vacio">Sin acción correctiva registrada.</p>
+          </section>
+
+          <section v-if="hallazgoSeleccionado.evidencias.length" class="bloque">
+            <h4>Evidencias ({{ hallazgoSeleccionado.evidencias.length }})</h4>
+            <div class="evidencias-grid">
+              <a
+                v-for="ev in hallazgoSeleccionado.evidencias"
+                :key="ev.id"
+                :href="ev.url ?? undefined"
+                target="_blank"
+                rel="noopener"
+                class="evidencia-thumb"
+                :title="`Ver evidencia #${ev.id}`"
+              >
+                <img :src="ev.url ?? undefined" :alt="`Evidencia ${ev.id}`" loading="lazy" />
+              </a>
+            </div>
           </section>
 
           <!-- Solo el auditor que registró el hallazgo puede editar -->
@@ -456,6 +482,46 @@ async function guardarSeguimiento() {
 .col-desc {
   max-width: 320px;
   color: var(--c-ink-2, #334155);
+}
+
+.foto-contador {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--c-primary-soft, #eef2ff);
+  color: var(--c-primary-active, #1e40af);
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.evidencias-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.evidencia-thumb {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface-3, #f1f5f9);
+  display: block;
+  transition: border-color 0.15s ease;
+}
+
+.evidencia-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.evidencia-thumb:hover {
+  border-color: var(--c-primary, #2563eb);
 }
 
 .chip-tipo {

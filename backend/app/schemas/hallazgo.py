@@ -4,6 +4,8 @@ from typing import Optional
 from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
 
+from app.schemas.evidencia import EvidenciaOut
+
 
 class HallazgoBase(SQLModel):
     model_config = ConfigDict(from_attributes=True)
@@ -71,3 +73,4 @@ class HallazgoDetallado(HallazgoRead):
     auditor_id: int = 0
     celula_id: Optional[int] = None
     celula_numero: Optional[int] = None
+    evidencias: list[EvidenciaOut] = Field(default_factory=list)

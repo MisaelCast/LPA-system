@@ -9,3 +9,5 @@ PyJWT
 email-validator>=2.2.0
 alembic
 apscheduler
+supabase
+python-multipart

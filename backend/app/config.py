@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     # calendarización de auditorías semanales.
     business_timezone: str = "America/Tijuana"
 
+    # Supabase Storage (fotos de hallazgos). Bucket privado.
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    supabase_bucket: str = "hallazgos"
+    evidencia_url_expira_segundos: int = 3600
+
     def _parse_origins_as_json(self, raw: str) -> list[str] | None:
         """Intenta interpretar la cadena como una lista JSON de orígenes."""
         try:

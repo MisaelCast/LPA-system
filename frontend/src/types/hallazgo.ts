@@ -1,5 +1,12 @@
 export type EstadoHallazgo = 'abierto' | 'en_proceso' | 'cerrado'
 
+export interface Evidencia {
+  id: number
+  fecha_carga: string
+  tipo_archivo: string
+  url: string | null
+}
+
 export interface HallazgoDetallado {
   id: number
   descripcion: string
@@ -22,6 +29,7 @@ export interface HallazgoDetallado {
   auditor_id: number
   celula_id: number | null
   celula_numero: number | null
+  evidencias: Evidencia[]
 }
 
 export interface HallazgoCreate {

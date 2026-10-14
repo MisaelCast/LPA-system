@@ -27,3 +27,12 @@ class EvidenciaRead(EvidenciaBase):
     id: int
     fecha_carga: datetime
     hallazgo_id: int
+
+
+class EvidenciaOut(SQLModel):
+    """Evidencia para el frontend, con URL firmada (transitoria)."""
+
+    id: int
+    fecha_carga: datetime
+    tipo_archivo: str
+    url: str | None = None
