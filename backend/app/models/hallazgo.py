@@ -8,11 +8,12 @@ from app.models.hallazgo_responsable import HallazgoResponsable
 if TYPE_CHECKING:
     from app.models.area import Area
     from app.models.evidencia import Evidencia
+    from app.models.hallazgo_seguimiento import HallazgoSeguimiento
     from app.models.respuesta import Respuesta
     from app.models.usuario import Usuario
 
 
-ESTADOS_HALLAZGO = ("abierto", "en_proceso", "cerrado")
+ESTADOS_HALLAZGO = ("abierto", "en_correccion", "cierre_solicitado", "cerrado")
 
 
 class Hallazgo(SQLModel, table=True):
@@ -31,6 +32,7 @@ class Hallazgo(SQLModel, table=True):
         default=None, foreign_key="area.id"
     )
     fecha_cierre: datetime | None = Field(default=None)
+    fecha_limite: datetime | None = Field(default=None)
 
     respuesta: "Respuesta" = Relationship(back_populates="hallazgo")
     evidencias: list["Evidencia"] = Relationship(back_populates="hallazgo")
@@ -39,3 +41,6 @@ class Hallazgo(SQLModel, table=True):
         link_model=HallazgoResponsable,
     )
     area_responsable: Optional["Area"] = Relationship()
+    seguimientos: list["HallazgoSeguimiento"] = Relationship(
+        back_populates="hallazgo",
+    )

@@ -494,6 +494,7 @@ class TestHallazgoService:
             solo_usuario_id=7,
             areas_ids=None,
             solo_auditores=False,
+            solo_responsable_id=None,
         )
 
     def test_listar_gestion_ve_todos(self):
@@ -511,6 +512,7 @@ class TestHallazgoService:
             solo_usuario_id=None,
             areas_ids=[-1],  # sin áreas asignadas → no ve nada
             solo_auditores=False,
+            solo_responsable_id=None,
         )
 
     def _configurar_para_seguimiento(self, usuario_id: int = 1):
@@ -584,11 +586,11 @@ class TestHallazgoService:
                     ):
                         self.service.actualizar_seguimiento(
                             1,
-                            HallazgoSeguimientoUpdate(estado="en_proceso"),
+                            HallazgoSeguimientoUpdate(estado="en_correccion"),
                             self.usuario,
                         )
 
-        assert hallazgo.estado == "en_proceso"
+        assert hallazgo.estado == "en_correccion"
         assert hallazgo.fecha_cierre is None
 
     def test_actualizar_seguimiento_sin_permiso(self):

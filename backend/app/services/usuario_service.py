@@ -201,6 +201,13 @@ class UsuarioService:
                     "Los supervisores no tienen células a cargo; solo áreas."
                 )
             self._asignar_areas_celulas(usuario, area_ids, [])
+        elif rol_nombre == "Responsable de Manufactura":
+            if celula_ids:
+                raise ValueError(
+                    "Los responsables de manufactura no tienen células a "
+                    "cargo; solo áreas."
+                )
+            self._asignar_areas_celulas(usuario, area_ids, [])
         elif rol_nombre == "Gerente":
             self._asignar_supervisores(usuario_id, supervisor_ids or [])
         else:  # Administrador u otros: sin asignación.

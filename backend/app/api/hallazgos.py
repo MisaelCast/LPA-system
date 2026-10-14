@@ -7,11 +7,17 @@ from app.auth.dependencies import get_current_active_user
 from app.db.database import get_session
 from app.models.usuario import Usuario
 from app.schemas.hallazgo import (
+    AvanceTicketRequest,
+    CierreResolucionRequest,
+    CierreSolicitudRequest,
     HallazgoCreate,
     HallazgoCreateRequest,
     HallazgoDetallado,
     HallazgoSeguimientoUpdate,
     HallazgoUpdate,
+    ResponsableAsignarRequest,
+    ResponsableResumen,
+    SeguimientoRead,
 )
 from app.services.hallazgo_service import HallazgoService
 
@@ -56,13 +62,21 @@ def listar_hallazgos(
     area_responsable_id: int | None = Query(default=None),
     solo_propios: bool = Query(default=False),
     solo_auditores: bool = Query(default=False),
+    solo_asignados: bool = Query(default=False),
+    atrasados: bool = Query(default=False),
+    sin_actualizar: bool = Query(default=False),
+    cierre_pendiente: bool = Query(default=False),
+    reincidencia: bool = Query(default=False),
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
     """Lista hallazgos con filtros opcionales.
 
     ``solo_propios`` devuelve solo los hallazgos del usuario autenticado;
-    ``solo_auditores`` devuelve los de la capa inferior (auditores).
+    ``solo_auditores`` los de la capa inferior (auditores);
+    ``solo_asignados`` los tickets asignados al usuario como responsable.
+    ``atrasados`` / ``sin_actualizar`` / ``cierre_pendiente`` / ``reincidencia``
+    son filtros de seguimiento para supervisión.
     """
     service = HallazgoService(session)
     try:
@@ -72,6 +86,11 @@ def listar_hallazgos(
             area_responsable_id=area_responsable_id,
             solo_propios=solo_propios,
             solo_auditores=solo_auditores,
+            solo_asignados=solo_asignados,
+            atrasados=atrasados,
+            sin_actualizar=sin_actualizar,
+            cierre_pendiente=cierre_pendiente,
+            reincidencia=reincidencia,
         )
     except ValueError as error:
         raise _a_http_error(error)
@@ -177,3 +196,118 @@ def eliminar_hallazgo(
     except ValueError as error:
         raise _a_http_error(error)
     return None
+
+
+@router.put(
+    "/hallazgos/{hallazgo_id}/responsable",
+    response_model=HallazgoDetallado,
+)
+def asignar_responsable(
+    hallazgo_id: int,
+    datos: ResponsableAsignarRequest,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Asigna o reasigna el Responsable de Manufactura (solo auditor dueño)."""
+    service = HallazgoService(session)
+    try:
+        return service.asignar_responsable(
+            hallazgo_id, datos.responsable_id, datos.fecha_limite, usuario
+        )
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.get(
+    "/hallazgos/{hallazgo_id}/responsables",
+    response_model=list[ResponsableResumen],
+)
+def responsables_del_area(
+    hallazgo_id: int,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Lista los Responsables de Manufactura del área del hallazgo."""
+    service = HallazgoService(session)
+    try:
+        return service.responsables_del_area(hallazgo_id, usuario)
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.post(
+    "/hallazgos/{hallazgo_id}/avance",
+    response_model=HallazgoDetallado,
+)
+def registrar_avance(
+    hallazgo_id: int,
+    datos: AvanceTicketRequest,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """El responsable registra acción correctiva y/o comentario."""
+    service = HallazgoService(session)
+    try:
+        return service.registrar_avance(
+            hallazgo_id,
+            datos.accion_correctiva,
+            datos.comentario,
+            usuario,
+        )
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.post(
+    "/hallazgos/{hallazgo_id}/solicitar-cierre",
+    response_model=HallazgoDetallado,
+)
+def solicitar_cierre(
+    hallazgo_id: int,
+    datos: CierreSolicitudRequest,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """El responsable solicita el cierre del ticket."""
+    service = HallazgoService(session)
+    try:
+        return service.solicitar_cierre(hallazgo_id, datos.comentario, usuario)
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.post(
+    "/hallazgos/{hallazgo_id}/resolver-cierre",
+    response_model=HallazgoDetallado,
+)
+def resolver_cierre(
+    hallazgo_id: int,
+    datos: CierreResolucionRequest,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """El auditor aprueba o rechaza la solicitud de cierre."""
+    service = HallazgoService(session)
+    try:
+        return service.resolver_cierre(
+            hallazgo_id, datos.aprobar, datos.observacion, usuario
+        )
+    except ValueError as error:
+        raise _a_http_error(error)
+
+
+@router.get(
+    "/hallazgos/{hallazgo_id}/historial",
+    response_model=list[SeguimientoRead],
+)
+def historial_hallazgo(
+    hallazgo_id: int,
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(get_current_active_user),
+):
+    """Devuelve el historial de seguimiento (trazabilidad) del hallazgo."""
+    service = HallazgoService(session)
+    try:
+        return service.historial(hallazgo_id, usuario)
+    except ValueError as error:
+        raise _a_http_error(error)

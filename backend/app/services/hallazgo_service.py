@@ -1,17 +1,21 @@
 """Logica de negocio para la entidad Hallazgo."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
+from app.config import settings
 from app.models.area import Area
 from app.models.auditoria import Auditoria
 from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import ESTADOS_HALLAZGO, Hallazgo
+from app.models.hallazgo_seguimiento import HallazgoSeguimiento
 from app.models.respuesta import Respuesta
+from app.models.rol import Rol
 from app.models.usuario import Usuario
+from app.models.usuario_area import UsuarioArea
 from app.repositories.hallazgo_repository import HallazgoRepository
 from app.repositories.respuesta_repository import RespuestaRepository
 from app.schemas.evidencia import EvidenciaOut
@@ -20,13 +24,25 @@ from app.schemas.hallazgo import (
     HallazgoDetallado,
     HallazgoSeguimientoUpdate,
     HallazgoUpdate,
+    ResponsableResumen,
+    SeguimientoRead,
 )
 from app.services.evidencia_service import EvidenciaService, url_firmada
 
 
 _VALORES_CON_HALLAZGO: set[str] = {"A", "R", "no_cumple"}
 _ESTADO_FINALIZADA: str = "finalizada"
+_ESTADO_CERRADO: str = "cerrado"
+_ROL_RESPONSABLE: str = "Responsable de Manufactura"
+_DIAS_SIN_ACTUALIZAR: int = 2
 _ROLES_GESTION: set[str] = {"Supervisor", "Gerente", "Administrador"}
+
+
+def _aware(valor: datetime) -> datetime:
+    """Normaliza a datetime con zona horaria UTC (la BD guarda TIMESTAMP naive)."""
+    if valor.tzinfo is None:
+        return valor.replace(tzinfo=timezone.utc)
+    return valor
 
 
 class HallazgoService:
@@ -89,10 +105,33 @@ class HallazgoService:
                 id=e.id or 0,
                 fecha_carga=e.fecha_carga,
                 tipo_archivo=e.tipo_archivo,
+                tipo=e.tipo,
                 url=url_firmada(e.ruta_archivo),
             )
             for e in sorted(hallazgo.evidencias, key=lambda e: e.id or 0)
         ]
+
+        responsable = hallazgo.responsables[0] if hallazgo.responsables else None
+
+        ahora = datetime.now(timezone.utc)
+        atrasado = bool(
+            hallazgo.fecha_limite is not None
+            and hallazgo.estado != _ESTADO_CERRADO
+            and _aware(hallazgo.fecha_limite) < ahora
+        )
+        seguimientos = sorted(
+            hallazgo.seguimientos,
+            key=lambda s: (_aware(s.fecha_creacion), s.id or 0),
+        )
+        ultima = (
+            seguimientos[-1].fecha_creacion
+            if seguimientos
+            else hallazgo.fecha_creacion
+        )
+        dias_sin_actualizar = (ahora - _aware(ultima)).days
+        reincidente = any(
+            s.tipo == "cierre_rechazado" for s in seguimientos
+        )
 
         return HallazgoDetallado(
             id=hallazgo.id,
@@ -117,6 +156,12 @@ class HallazgoService:
             celula_id=celula_id,
             celula_numero=celula_numero,
             evidencias=evidencias,
+            fecha_limite=hallazgo.fecha_limite,
+            responsable_id=responsable.id if responsable else None,
+            responsable_nombre=responsable.nombre if responsable else None,
+            atrasado=atrasado,
+            dias_sin_actualizar=dias_sin_actualizar,
+            reincidente=reincidente,
         )
 
     def crear(self, datos: HallazgoCreate, usuario: Usuario) -> HallazgoDetallado:
@@ -286,13 +331,20 @@ class HallazgoService:
         area_responsable_id: int | None = None,
         solo_propios: bool = False,
         solo_auditores: bool = False,
+        solo_asignados: bool = False,
+        atrasados: bool = False,
+        sin_actualizar: bool = False,
+        cierre_pendiente: bool = False,
+        reincidencia: bool = False,
     ) -> list[HallazgoDetallado]:
         """Lista hallazgos segun el rol del usuario.
 
-        - ``solo_propios``: solo los hallazgos detectados por el propio usuario
-          (sus auditorías).
-        - ``solo_auditores``: solo hallazgos de la capa inferior (auditores),
-          limitados a las áreas asignadas del Supervisor/Gerente.
+        - ``solo_propios``: solo los hallazgos detectados por el propio usuario.
+        - ``solo_auditores``: solo los de la capa inferior (auditores).
+        - ``solo_asignados``: solo los tickets asignados al usuario como
+          responsable de manufactura.
+        - ``atrasados`` / ``sin_actualizar`` / ``cierre_pendiente`` /
+          ``reincidencia``: filtros derivados de seguimiento (supervisores).
 
         Por defecto: un Auditor solo ve sus propios hallazgos; Supervisor/Gerente
         ven los de sus áreas asignadas y Administrador ve todos.
@@ -302,21 +354,20 @@ class HallazgoService:
         solo_usuario_id: int | None = None
         areas_ids: list[int] | None = None
         solo_aud = False
+        solo_responsable_id: int | None = None
 
-        if solo_propios:
+        if solo_asignados:
+            solo_responsable_id = usuario.id
+        elif solo_propios:
             solo_usuario_id = usuario.id
         elif solo_auditores:
             solo_aud = True
             if rol in ("Supervisor", "Gerente"):
-                areas_ids = [a.id for a in usuario.areas]
-                if not areas_ids:
-                    areas_ids = [-1]  # sin áreas asignadas → no ve nada
+                areas_ids = [a.id for a in usuario.areas] or [-1]
         else:
             solo_usuario_id = None if self._es_gestion(usuario) else usuario.id
             if rol in ("Supervisor", "Gerente"):
-                areas_ids = [a.id for a in usuario.areas]
-                if not areas_ids:
-                    areas_ids = [-1]
+                areas_ids = [a.id for a in usuario.areas] or [-1]
 
         hallazgos = self._repo.listar(
             estado=estado,
@@ -324,8 +375,26 @@ class HallazgoService:
             solo_usuario_id=solo_usuario_id,
             areas_ids=areas_ids,
             solo_auditores=solo_aud,
+            solo_responsable_id=solo_responsable_id,
         )
-        return [self._enriquecer(h) for h in hallazgos]
+        detallados = [self._enriquecer(h) for h in hallazgos]
+
+        if atrasados:
+            detallados = [h for h in detallados if h.atrasado]
+        if sin_actualizar:
+            detallados = [
+                h
+                for h in detallados
+                if h.estado != _ESTADO_CERRADO
+                and (h.dias_sin_actualizar or 0) >= _DIAS_SIN_ACTUALIZAR
+            ]
+        if cierre_pendiente:
+            detallados = [
+                h for h in detallados if h.estado == "cierre_solicitado"
+            ]
+        if reincidencia:
+            detallados = [h for h in detallados if h.reincidente]
+        return detallados
 
     def actualizar_seguimiento(
         self,
@@ -356,7 +425,8 @@ class HallazgoService:
         if datos.estado is not None:
             if datos.estado not in ESTADOS_HALLAZGO:
                 raise ValueError(
-                    "Estado invalido. Debe ser abierto, en_proceso o cerrado."
+                    "Estado invalido. Debe ser abierto, en_correccion, "
+                    "cierre_solicitado o cerrado."
                 )
             hallazgo.estado = datos.estado
             if datos.estado == "cerrado":
@@ -377,3 +447,276 @@ class HallazgoService:
 
         actualizado = self._repo.actualizar(hallazgo)
         return self._enriquecer(actualizado)
+
+    # --- Flujo de ticket: asignación, avance y cierre ---
+
+    def _registrar(
+        self,
+        hallazgo: Hallazgo,
+        usuario: Usuario,
+        tipo: str,
+        detalle: str | None = None,
+        desde: str | None = None,
+        hasta: str | None = None,
+    ) -> None:
+        """Agrega una entrada inmutable al historial del hallazgo."""
+        self._session.add(
+            HallazgoSeguimiento(
+                hallazgo_id=hallazgo.id,
+                usuario_id=usuario.id,
+                tipo=tipo,
+                detalle=detalle,
+                estado_desde=desde,
+                estado_hasta=hasta,
+                fecha_creacion=datetime.now(timezone.utc),
+            )
+        )
+
+    def _validar_responsable_asignado(
+        self, hallazgo: Hallazgo, usuario: Usuario
+    ) -> None:
+        asignados = {u.id for u in hallazgo.responsables}
+        if usuario.id not in asignados:
+            raise ValueError(
+                "Solo el responsable asignado puede actualizar este hallazgo."
+            )
+
+    def _validar_auditor_dueno(
+        self, hallazgo: Hallazgo, usuario: Usuario
+    ) -> EjecucionAuditoria:
+        respuesta = self._obtener_respuesta(hallazgo.respuesta_id)
+        ejecucion = self._obtener_ejecucion(respuesta.ejecucion_auditoria_id)
+        if (
+            usuario.id != ejecucion.usuario_id
+            and self._rol(usuario) != "Administrador"
+        ):
+            raise ValueError(
+                "Solo el auditor que registró el hallazgo o un administrador "
+                "pueden realizar esta acción."
+            )
+        return ejecucion
+
+    def asignar_responsable(
+        self,
+        hallazgo_id: int,
+        responsable_id: int,
+        fecha_limite: datetime | None,
+        usuario: Usuario,
+    ) -> HallazgoDetallado:
+        """Asigna o reasigna el Responsable de Manufactura de un hallazgo.
+
+        Reglas: solo el auditor dueño (o admin); el responsable debe tener el
+        rol correcto y pertenecer al área del hallazgo.
+        """
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+        self._validar_auditor_dueno(hallazgo, usuario)
+
+        if hallazgo.estado == _ESTADO_CERRADO:
+            raise ValueError("No se puede reasignar un hallazgo cerrado.")
+
+        responsable = self._session.get(Usuario, responsable_id)
+        if responsable is None or not responsable.activo:
+            raise ValueError("El responsable no existe o esta inactivo.")
+        if self._rol(responsable) != _ROL_RESPONSABLE:
+            raise ValueError(
+                "El usuario seleccionado no es Responsable de Manufactura."
+            )
+        if hallazgo.area_responsable_id is None:
+            raise ValueError(
+                "El hallazgo no tiene un area responsable definida."
+            )
+        if hallazgo.area_responsable_id not in {a.id for a in responsable.areas}:
+            raise ValueError(
+                "El responsable no pertenece al area del hallazgo."
+            )
+
+        anterior = hallazgo.responsables[0] if hallazgo.responsables else None
+        hallazgo.responsables = [responsable]
+
+        if fecha_limite is not None:
+            hallazgo.fecha_limite = fecha_limite
+        elif hallazgo.fecha_limite is None:
+            hallazgo.fecha_limite = datetime.now(timezone.utc) + timedelta(
+                days=settings.hallazgo_plazo_dias
+            )
+
+        if anterior is not None and anterior.id != responsable.id:
+            detalle = (
+                f"Reasignado de {anterior.nombre} a {responsable.nombre}"
+            )
+        else:
+            detalle = f"Responsable asignado: {responsable.nombre}"
+        self._registrar(hallazgo, usuario, "asignacion", detalle)
+
+        actualizado = self._repo.actualizar(hallazgo)
+        return self._enriquecer(actualizado)
+
+    def registrar_avance(
+        self,
+        hallazgo_id: int,
+        accion_correctiva: str | None,
+        comentario: str | None,
+        usuario: Usuario,
+    ) -> HallazgoDetallado:
+        """Registra una acción correctiva/comentario del responsable.
+
+        Transiciona ``abierto`` -> ``en_correccion`` en el primer avance.
+        """
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+        self._validar_responsable_asignado(hallazgo, usuario)
+
+        if hallazgo.estado not in ("abierto", "en_correccion"):
+            raise ValueError(
+                "Solo se puede registrar avance en hallazgos abiertos o en "
+                "corrección."
+            )
+
+        detalle = (accion_correctiva or comentario or "").strip()
+        if not detalle:
+            raise ValueError(
+                "Debe indicar una acción correctiva o un comentario."
+            )
+
+        desde = hallazgo.estado
+        tipo = "accion_correctiva" if accion_correctiva else "comentario"
+        if accion_correctiva:
+            hallazgo.accion_correctiva = accion_correctiva
+        if hallazgo.estado == "abierto":
+            hallazgo.estado = "en_correccion"
+        self._registrar(hallazgo, usuario, tipo, detalle, desde, hallazgo.estado)
+
+        actualizado = self._repo.actualizar(hallazgo)
+        return self._enriquecer(actualizado)
+
+    def solicitar_cierre(
+        self, hallazgo_id: int, comentario: str | None, usuario: Usuario
+    ) -> HallazgoDetallado:
+        """El responsable solicita el cierre (``en_correccion`` -> ``cierre_solicitado``)."""
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+        self._validar_responsable_asignado(hallazgo, usuario)
+
+        if hallazgo.estado != "en_correccion":
+            raise ValueError(
+                "Solo se puede solicitar el cierre de un hallazgo en corrección."
+            )
+
+        desde = hallazgo.estado
+        hallazgo.estado = "cierre_solicitado"
+        self._registrar(
+            hallazgo,
+            usuario,
+            "solicitud_cierre",
+            comentario or "Solicitud de cierre",
+            desde,
+            hallazgo.estado,
+        )
+
+        actualizado = self._repo.actualizar(hallazgo)
+        return self._enriquecer(actualizado)
+
+    def resolver_cierre(
+        self,
+        hallazgo_id: int,
+        aprobar: bool,
+        observacion: str | None,
+        usuario: Usuario,
+    ) -> HallazgoDetallado:
+        """El auditor aprueba o rechaza la solicitud de cierre.
+
+        Rechazar devuelve el ticket a ``en_correccion`` conservando el historial.
+        """
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+
+        if usuario.id in {u.id for u in hallazgo.responsables}:
+            raise ValueError(
+                "El responsable no puede aprobar el cierre de su propio "
+                "hallazgo."
+            )
+        self._validar_auditor_dueno(hallazgo, usuario)
+
+        if hallazgo.estado != "cierre_solicitado":
+            raise ValueError(
+                "El hallazgo no tiene una solicitud de cierre pendiente."
+            )
+
+        desde = hallazgo.estado
+        if aprobar:
+            hallazgo.estado = "cerrado"
+            hallazgo.fecha_cierre = datetime.now(timezone.utc)
+            tipo = "cierre_aprobado"
+            detalle = observacion or "Cierre aprobado."
+        else:
+            hallazgo.estado = "en_correccion"
+            hallazgo.fecha_cierre = None
+            tipo = "cierre_rechazado"
+            detalle = observacion or (
+                "Cierre rechazado; se reanuda la corrección."
+            )
+        self._registrar(hallazgo, usuario, tipo, detalle, desde, hallazgo.estado)
+
+        actualizado = self._repo.actualizar(hallazgo)
+        return self._enriquecer(actualizado)
+
+    def historial(
+        self, hallazgo_id: int, usuario: Usuario
+    ) -> list[SeguimientoRead]:
+        """Devuelve el historial de seguimiento en orden cronológico."""
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+        filas = self._session.exec(
+            select(HallazgoSeguimiento)
+            .where(HallazgoSeguimiento.hallazgo_id == hallazgo.id)
+            .order_by(
+                HallazgoSeguimiento.fecha_creacion,
+                HallazgoSeguimiento.id,
+            )
+        ).all()
+        return [self._a_seguimiento_read(f) for f in filas]
+
+    def _a_seguimiento_read(self, fila: HallazgoSeguimiento) -> SeguimientoRead:
+        usuario = self._session.get(Usuario, fila.usuario_id)
+        return SeguimientoRead(
+            id=fila.id or 0,
+            hallazgo_id=fila.hallazgo_id,
+            usuario_id=fila.usuario_id,
+            usuario_nombre=usuario.nombre if usuario else "",
+            tipo=fila.tipo,
+            detalle=fila.detalle,
+            estado_desde=fila.estado_desde,
+            estado_hasta=fila.estado_hasta,
+            fecha_creacion=fila.fecha_creacion,
+        )
+
+    def responsables_del_area(
+        self, hallazgo_id: int, usuario: Usuario
+    ) -> list[ResponsableResumen]:
+        """Lista los Responsables de Manufactura del área del hallazgo."""
+        hallazgo = self._repo.obtener_por_id(hallazgo_id)
+        if hallazgo is None:
+            raise ValueError("Hallazgo no encontrado.")
+        if hallazgo.area_responsable_id is None:
+            return []
+        filas = self._session.exec(
+            select(Usuario)
+            .join(UsuarioArea, UsuarioArea.usuario_id == Usuario.id)
+            .join(Rol, Rol.id == Usuario.rol_id)
+            .where(
+                UsuarioArea.area_id == hallazgo.area_responsable_id,
+                Rol.nombre == _ROL_RESPONSABLE,
+                Usuario.activo == True,  # noqa: E712
+            )
+            .order_by(Usuario.nombre)
+        ).all()
+        return [
+            ResponsableResumen(id=u.id or 0, nombre=u.nombre, correo=u.correo)
+            for u in filas
+        ]

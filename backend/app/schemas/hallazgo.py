@@ -53,6 +53,7 @@ class HallazgoRead(HallazgoBase):
     area_responsable_id: int | None = None
     area_responsable_nombre: str | None = None
     fecha_cierre: datetime | None = None
+    fecha_limite: datetime | None = None
 
 
 class HallazgoDetallado(HallazgoRead):
@@ -74,3 +75,67 @@ class HallazgoDetallado(HallazgoRead):
     celula_id: Optional[int] = None
     celula_numero: Optional[int] = None
     evidencias: list[EvidenciaOut] = Field(default_factory=list)
+    responsable_id: int | None = None
+    responsable_nombre: str | None = None
+    atrasado: bool = False
+    dias_sin_actualizar: int | None = None
+    reincidente: bool = False
+
+
+class ResponsableAsignarRequest(SQLModel):
+    """Asigna (o reasigna) el responsable de un hallazgo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    responsable_id: int
+    fecha_limite: datetime | None = None
+
+
+class AvanceTicketRequest(SQLModel):
+    """Avance registrado por el responsable (acción correctiva y/o comentario)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    accion_correctiva: str | None = Field(default=None, max_length=1000)
+    comentario: str | None = Field(default=None, max_length=1000)
+
+
+class CierreSolicitudRequest(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    comentario: str | None = Field(default=None, max_length=1000)
+
+
+class CierreResolucionRequest(SQLModel):
+    """El auditor aprueba o rechaza la solicitud de cierre."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    aprobar: bool
+    observacion: str | None = Field(default=None, max_length=1000)
+
+
+class SeguimientoRead(SQLModel):
+    """Entrada del historial (trazabilidad) de un hallazgo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    hallazgo_id: int
+    usuario_id: int
+    usuario_nombre: str
+    tipo: str
+    detalle: str | None = None
+    estado_desde: str | None = None
+    estado_hasta: str | None = None
+    fecha_creacion: datetime
+
+
+class ResponsableResumen(SQLModel):
+    """Responsable de Manufactura disponible para asignar a un hallazgo."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nombre: str
+    correo: str

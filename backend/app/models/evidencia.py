@@ -15,6 +15,7 @@ class Evidencia(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     ruta_archivo: str = Field(max_length=500)
     tipo_archivo: str = Field(default="fotografia", max_length=100)
+    tipo: str = Field(default="original", max_length=20)
     fecha_carga: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     hallazgo_id: int = Field(foreign_key="hallazgo.id")
 

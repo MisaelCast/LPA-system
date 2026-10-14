@@ -1,6 +1,6 @@
 """Endpoints para evidencias (fotos) de hallazgos en Supabase Storage."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session
 
 from app.api.hallazgos import _a_http_error
@@ -21,14 +21,18 @@ router = APIRouter(tags=["evidencias"])
 def subir_evidencia(
     hallazgo_id: int,
     archivo: UploadFile = File(...),
+    tipo: str = Form(default="original"),
     session: Session = Depends(get_session),
     usuario: Usuario = Depends(get_current_active_user),
 ):
-    """Sube una imagen (JPG/PNG/WEBP, max. 5 MB) como evidencia del hallazgo."""
+    """Sube una imagen (JPG/PNG/WEBP, max. 5 MB) como evidencia del hallazgo.
+
+    ``tipo`` puede ser ``original`` (hallazgo) o ``correccion`` (del responsable).
+    """
     contenido = archivo.file.read()
     try:
         return EvidenciaService(session).subir(
-            hallazgo_id, archivo.filename, contenido, usuario
+            hallazgo_id, archivo.filename, contenido, usuario, tipo
         )
     except ValueError as error:
         raise _a_http_error(error) from error

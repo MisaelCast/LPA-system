@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     supabase_bucket: str = "hallazgos"
     evidencia_url_expira_segundos: int = 3600
 
+    # Plazo (días) para la fecha límite automática de un ticket de hallazgo.
+    hallazgo_plazo_dias: int = 5
+
     def _parse_origins_as_json(self, raw: str) -> list[str] | None:
         """Intenta interpretar la cadena como una lista JSON de orígenes."""
         try:

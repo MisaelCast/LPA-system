@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from app.models.auditoria import Auditoria
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import Hallazgo
+from app.models.hallazgo_responsable import HallazgoResponsable
 from app.models.respuesta import Respuesta
 from app.models.rol import Rol
 from app.models.usuario import Usuario
@@ -33,6 +34,7 @@ class HallazgoRepository:
         solo_usuario_id: int | None = None,
         areas_ids: list[int] | None = None,
         solo_auditores: bool = False,
+        solo_responsable_id: int | None = None,
     ) -> list[Hallazgo]:
         """Lista hallazgos con filtros opcionales.
 
@@ -68,6 +70,11 @@ class HallazgoRepository:
             stmt = stmt.join(Rol, Usuario.rol_id == Rol.id).where(
                 Rol.nombre == "Auditor"
             )
+        if solo_responsable_id is not None:
+            stmt = stmt.join(
+                HallazgoResponsable,
+                HallazgoResponsable.hallazgo_id == Hallazgo.id,
+            ).where(HallazgoResponsable.usuario_id == solo_responsable_id)
         if areas_ids:
             stmt = (
                 stmt.join(Auditoria, Auditoria.id == EjecucionAuditoria.auditoria_id)

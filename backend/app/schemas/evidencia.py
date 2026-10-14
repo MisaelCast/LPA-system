@@ -35,4 +35,5 @@ class EvidenciaOut(SQLModel):
     id: int
     fecha_carga: datetime
     tipo_archivo: str
+    tipo: str = "original"
     url: str | None = None

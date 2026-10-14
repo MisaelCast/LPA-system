@@ -204,6 +204,9 @@ class EjecucionAuditoriaService:
         query = select(Auditoria).where(Auditoria.activa == True)  # noqa: E712
 
         rol_nombre = getattr(getattr(usuario, "rol", None), "nombre", "")
+        # El Responsable de Manufactura no ejecuta auditorías (solo tickets).
+        if rol_nombre == "Responsable de Manufactura":
+            return []
         if rol_nombre in ("Auditor", "Supervisor", "Gerente"):
             from app.models.capa import Capa
 
@@ -281,6 +284,7 @@ class EjecucionAuditoriaService:
     def iniciar(
         self, auditoria_id: int, usuario: Usuario, celula_id: int | None = None
     ) -> EjecucionAuditoria:
+        self._validar_puede_ejecutar(usuario)
         auditoria = self._session.get(Auditoria, auditoria_id)
         if auditoria is None:
             raise ValueError("Auditoria no encontrada.")
@@ -400,6 +404,19 @@ class EjecucionAuditoriaService:
     def _es_admin(self, usuario: Usuario) -> bool:
         rol = getattr(usuario, "rol", None)
         return getattr(rol, "nombre", "") == "Administrador"
+
+    def _validar_puede_ejecutar(self, usuario: Usuario) -> None:
+        """Rechaza la ejecución de auditorías al Responsable de Manufactura.
+
+        Ese rol solo atiende tickets de hallazgos; no ejecuta auditorías.
+        """
+        if getattr(getattr(usuario, "rol", None), "nombre", "") == (
+            "Responsable de Manufactura"
+        ):
+            raise ValueError(
+                "El Responsable de Manufactura no ejecuta auditorías; "
+                "solo resuelve tickets de hallazgos."
+            )
 
     def _es_supervisor(self, usuario: Usuario) -> bool:
         rol = getattr(usuario, "rol", None)
@@ -828,6 +845,7 @@ class EjecucionAuditoriaService:
         self, ejecucion_id: int, usuario: Usuario
     ) -> EjecucionAuditoria:
         """Transiciona una ejecución ``pendiente`` a ``en_proceso``."""
+        self._validar_puede_ejecutar(usuario)
         ejecucion = self._repo.obtener_por_id(ejecucion_id)
         if ejecucion is None:
             raise ValueError("Ejecucion de auditoria no encontrada.")

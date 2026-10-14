@@ -15,6 +15,7 @@ from app.models.usuario import Usuario
 from app.schemas.evidencia import EvidenciaOut
 
 _MAXIMO_BYTES = 5 * 1024 * 1024  # 5 MB
+_TIPOS_EVIDENCIA = ("original", "correccion")
 _EXTENSIONES: dict[str, str] = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -66,7 +67,12 @@ class EvidenciaService:
         if ejecucion is None:
             raise ValueError("Ejecucion de auditoria no encontrada.")
         rol = getattr(getattr(usuario, "rol", None), "nombre", "")
-        if usuario.id != ejecucion.usuario_id and rol != "Administrador":
+        es_responsable = usuario.id in {u.id for u in hallazgo.responsables}
+        if (
+            usuario.id != ejecucion.usuario_id
+            and rol != "Administrador"
+            and not es_responsable
+        ):
             raise ValueError(
                 "No tiene permiso para gestionar las evidencias de este "
                 "hallazgo."
@@ -79,9 +85,14 @@ class EvidenciaService:
         nombre_archivo: str | None,
         contenido: bytes,
         usuario: Usuario,
+        tipo: str = "original",
     ) -> EvidenciaOut:
         hallazgo = self._hallazgo_autorizado(hallazgo_id, usuario)
 
+        if tipo not in _TIPOS_EVIDENCIA:
+            raise ValueError(
+                "Tipo de evidencia invalido. Use 'original' o 'correccion'."
+            )
         if not contenido:
             raise ValueError("El archivo esta vacio.")
         if len(contenido) > _MAXIMO_BYTES:
@@ -97,14 +108,14 @@ class EvidenciaService:
         if not settings.supabase_url or not settings.supabase_service_key:
             raise ValueError("El almacenamiento (Supabase) no esta configurado.")
 
-        tipo = _EXTENSIONES[extension]
+        tipo_mime = _EXTENSIONES[extension]
         ruta = f"{hallazgo.id}/{uuid.uuid4().hex}{extension}"
         try:
             bucket = _cliente().storage.from_(settings.supabase_bucket)
             bucket.upload(
                 path=ruta,
                 file=contenido,
-                file_options={"content-type": tipo, "x-upsert": "false"},
+                file_options={"content-type": tipo_mime, "x-upsert": "false"},
             )
         except Exception as error:
             raise ValueError(
@@ -113,7 +124,8 @@ class EvidenciaService:
 
         evidencia = Evidencia(
             ruta_archivo=ruta,
-            tipo_archivo=tipo,
+            tipo_archivo=tipo_mime,
+            tipo=tipo,
             fecha_carga=datetime.now(timezone.utc),
             hallazgo_id=hallazgo.id,
         )
@@ -124,6 +136,7 @@ class EvidenciaService:
             id=evidencia.id or 0,
             fecha_carga=evidencia.fecha_carga,
             tipo_archivo=evidencia.tipo_archivo,
+            tipo=evidencia.tipo,
             url=url_firmada(ruta),
         )
 
@@ -139,6 +152,7 @@ class EvidenciaService:
                 id=e.id or 0,
                 fecha_carga=e.fecha_carga,
                 tipo_archivo=e.tipo_archivo,
+                tipo=e.tipo,
                 url=url_firmada(e.ruta_archivo),
             )
             for e in filas
