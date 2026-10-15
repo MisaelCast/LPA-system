@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { login } from '@/services/auth.service'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const correo = ref('')
@@ -12,6 +13,11 @@ const contrasena = ref('')
 const mostrarContrasena = ref(false)
 const error = ref('')
 const cargando = ref(false)
+
+const aviso = ref('')
+if (route.query.motivo === 'expired') {
+  aviso.value = 'Tu sesión ha expirado. Inicia sesión nuevamente.'
+}
 
 async function handleSubmit() {
   error.value = ''
@@ -22,7 +28,7 @@ async function handleSubmit() {
       correo: correo.value,
       contrasena: contrasena.value,
     })
-    authStore.setToken(token.access_token)
+    authStore.setTokens(token.access_token, token.refresh_token ?? null)
     await authStore.cargarUsuario()
     router.push('/dashboard')
   } catch (err: unknown) {
@@ -62,6 +68,7 @@ async function handleSubmit() {
         </div>
       </div>
 
+      <div v-if="aviso" class="msg msg-info" role="status">{{ aviso }}</div>
       <div v-if="error" class="msg msg-err" role="alert">{{ error }}</div>
 
       <div class="field">
