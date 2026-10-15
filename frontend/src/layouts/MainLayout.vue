@@ -57,8 +57,8 @@ const grupos = computed(() => [
     titulo: 'CORRECCIÓN',
     items: [
       {
-        to: '/mis-tickets',
-        label: 'Mis tickets',
+        to: '/hallazgos-asignados',
+        label: 'Hallazgos asignados',
         icon: 'ticket',
         visible: authStore.isResponsable,
       },

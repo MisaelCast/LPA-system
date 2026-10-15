@@ -80,9 +80,9 @@ const router = createRouter({
           meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
         },
         {
-          path: 'mis-tickets',
-          name: 'mis-tickets',
-          component: () => import('@/views/tickets/MisTicketsView.vue'),
+          path: 'hallazgos-asignados',
+          name: 'hallazgos-asignados',
+          component: () => import('@/views/tickets/HallazgosAsignadosView.vue'),
           meta: { roles: ['Responsable de Manufactura'] },
         },
         {

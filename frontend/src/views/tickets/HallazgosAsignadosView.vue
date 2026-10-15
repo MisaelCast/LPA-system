@@ -252,7 +252,7 @@ async function onFotoSeleccionada(event: Event) {
   <div class="page">
     <header class="page-header">
       <div class="page-header-info">
-        <h1>Mis tickets</h1>
+        <h1>Hallazgos asignados</h1>
         <p class="subtitle">
           Hallazgos asignados a tu área. Registra la corrección y solicita el cierre.
         </p>
