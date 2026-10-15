@@ -42,13 +42,21 @@ class Token(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
     access_token: str
-    token_type: str
+    refresh_token: str | None = None
+    token_type: str = "bearer"
+    expires_in: int = 0
 
 
 class DatosToken(SQLModel):
     model_config = ConfigDict(from_attributes=True)
 
     usuario_id: int | None = None
+
+
+class RefreshTokenRequest(SQLModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    refresh_token: str
 
 
 class UsuarioEstadoUpdate(SQLModel):

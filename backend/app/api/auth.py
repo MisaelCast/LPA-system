@@ -3,13 +3,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
+import jwt
+
 from app.auth.dependencies import get_current_active_user
-from app.auth.jwt import create_access_token
+from app.auth.jwt import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+)
 from app.auth.permissions import require_roles
 from app.auth.security import verify_password
+from app.config import settings
 from app.db.database import get_session
 from app.models.usuario import Usuario
-from app.schemas.usuario import Token, UsuarioLogin, UsuarioRead
+from app.schemas.usuario import (
+    RefreshTokenRequest,
+    Token,
+    UsuarioLogin,
+    UsuarioRead,
+)
 
 router = APIRouter(tags=["autenticación"])
 
@@ -19,7 +31,7 @@ def login(
     credentials: UsuarioLogin,
     session: Session = Depends(get_session),
 ) -> Token:
-    """Authenticate a user and return a JWT access token."""
+    """Authenticate a user and return JWT access and refresh tokens."""
     user = session.exec(
         select(Usuario).where(Usuario.correo == credentials.correo)
     ).first()
@@ -37,8 +49,61 @@ def login(
         )
 
     access_token = create_access_token(subject=str(user.id))
+    refresh_token = create_refresh_token(subject=str(user.id))
 
-    return Token(access_token=access_token, token_type="bearer")
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
+
+
+@router.post("/auth/refresh", response_model=Token)
+def refresh_token(
+    datos: RefreshTokenRequest,
+    session: Session = Depends(get_session),
+) -> Token:
+    """Intercambia un refresh token válido por un nuevo par de tokens.
+
+    El refresh token se rota (se emite uno nuevo) en cada llamada exitosa.
+    """
+    try:
+        payload = decode_refresh_token(datos.refresh_token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="La sesión ha expirado. Inicia sesión nuevamente.",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token inválido.",
+        )
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token inválido.",
+        )
+
+    user = session.get(Usuario, int(user_id))
+    if user is None or not user.activo:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="La sesión ya no es válida.",
+        )
+
+    new_access = create_access_token(subject=str(user.id))
+    new_refresh = create_refresh_token(subject=str(user.id))
+
+    return Token(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        token_type="bearer",
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
 
 
 @router.get("/auth/me", response_model=UsuarioRead)
