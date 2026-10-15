@@ -171,7 +171,7 @@ function mostrarError(prefix: string, err: unknown) {
 }
 
 /* ——— Modal crear ——— */
-function abrirModalCrear() {
+function resetFormularioCrear() {
   formNombre.value = ''
   formCorreo.value = ''
   formContrasena.value = ''
@@ -181,11 +181,16 @@ function abrirModalCrear() {
   formCelulasIds.value = []
   formSupervisorIds.value = []
   formError.value = ''
+}
+
+function abrirModalCrear() {
+  resetFormularioCrear()
   modalCrearAbierto.value = true
 }
 
 function cerrarModalCrear() {
   if (formGuardando.value) return
+  resetFormularioCrear()
   modalCrearAbierto.value = false
 }
 
@@ -208,6 +213,7 @@ async function confirmarCrear() {
       await guardarAsignacion(creado.id, asignacionPayload())
     }
     mostrarToast('ok', `Usuario "${formNombre.value.trim()}" creado.`)
+    resetFormularioCrear()
     modalCrearAbierto.value = false
   } catch (err) {
     mostrarError('crear el usuario', err)
