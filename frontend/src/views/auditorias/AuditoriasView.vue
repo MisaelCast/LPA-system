@@ -67,6 +67,31 @@ const auditoriasFiltradas = computed(() => {
   return auditoriaStore.auditorias.filter((a) => a.nombre.toLowerCase().includes(q))
 })
 
+const auditoriasPorArea = computed(() => {
+  const grupos = new Map<string, Auditoria[]>()
+  for (const a of auditoriasFiltradas.value) {
+    const clave = a.area_nombre?.trim() || 'Sin área'
+    const lista = grupos.get(clave)
+    if (lista) {
+      lista.push(a)
+    } else {
+      grupos.set(clave, [a])
+    }
+  }
+  return Array.from(grupos.entries())
+    .map(([nombre, lista]) => ({
+      nombre,
+      auditorias: [...lista].sort((x, y) => x.nombre.localeCompare(y.nombre, 'es')),
+    }))
+    .sort((x, y) => {
+      if (x.nombre === 'Sin área') return 1
+      if (y.nombre === 'Sin área') return -1
+      return x.nombre.localeCompare(y.nombre, 'es')
+    })
+})
+
+const totalAreas = computed(() => auditoriasPorArea.value.length)
+
 const totalAuditorias = computed(() => auditoriaStore.auditorias.length)
 const auditoriasActivas = computed(() => auditoriaStore.auditorias.filter((a) => a.activa).length)
 const totalCriterios = computed(() => {
@@ -318,6 +343,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         <span class="stat-value stat-active">{{ auditoriasActivas }}</span>
       </div>
       <div class="stat">
+        <span class="stat-label">Áreas</span>
+        <span class="stat-value">{{ totalAreas }}</span>
+      </div>
+      <div class="stat">
         <span class="stat-label">Criterios totales</span>
         <span class="stat-value">{{ totalCriterios }}</span>
       </div>
@@ -379,135 +408,149 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       </button>
     </div>
 
-    <!-- Lista de auditorías -->
+    <!-- Lista de auditorías, agrupadas por área -->
     <div v-else class="auditorias-list">
-      <article
-        v-for="a in auditoriasFiltradas"
-        :key="a.id"
-        class="auditoria-card"
-        :class="[
-          { 'auditoria-card--inactive': !a.activa },
-          { 'auditoria-card--expanded': estaExpandida(a.id) }
-        ]"
+      <section
+        v-for="grupo in auditoriasPorArea"
+        :key="grupo.nombre"
+        class="area-group"
       >
-        <button
-          type="button"
-          class="auditoria-card-header"
-          :aria-expanded="estaExpandida(a.id)"
-          :aria-controls="`auditoria-body-${a.id}`"
-          @click="toggleExpand(a.id)"
-        >
-          <div class="auditoria-card-title">
-            <svg class="chevron" :class="{ 'chevron--open': estaExpandida(a.id) }" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M5 3l6 5-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <h3>{{ a.nombre }}</h3>
-            <span class="badge" :class="a.activa ? 'badge-on' : 'badge-off'">
-              {{ a.activa ? 'Activa' : 'Inactiva' }}
-            </span>
-          </div>
-          <div v-if="authStore.isAdmin" class="auditoria-card-actions" @click.stop>
-            <button
-              class="icon-btn"
-              title="Editar auditoría"
-              aria-label="Editar auditoría"
-              @click="abrirModalEditar(a)"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
-              </svg>
-            </button>
-            <button
-              class="icon-btn icon-btn--danger"
-              title="Eliminar auditoría"
-              aria-label="Eliminar auditoría"
-              @click="eliminarAuditoria(a)"
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.5 9.5h7L12 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-        </button>
-
-        <div class="auditoria-card-meta">
-          <span class="badge meta-badge">{{ a.area_nombre || 'Sin área' }}</span>
-          <span class="badge meta-badge">{{ a.capa_nombre }}</span>
-          <span class="badge meta-badge">{{ a.frecuencia_nombre }}</span>
-          <span class="meta-text">
-            {{ criterioStore.criteriosDe(a.id).length }} criterios
+        <header class="area-group-header">
+          <h2>{{ grupo.nombre }}</h2>
+          <span class="area-group-count">
+            {{ grupo.auditorias.length }} {{ grupo.auditorias.length === 1 ? 'auditoría' : 'auditorías' }}
           </span>
-        </div>
+        </header>
 
-        <div
-          v-show="estaExpandida(a.id)"
-          :id="`auditoria-body-${a.id}`"
-          class="auditoria-card-body"
-        >
-          <div class="criterios-header">Criterios</div>
-
-          <ul v-if="criterioStore.criteriosDe(a.id).length > 0" class="criterio-list">
-            <li
-              v-for="c in criterioStore.criteriosDe(a.id)"
-              :key="c.id"
-              class="criterio-item"
-              :class="{ 'criterio-item--inactive': !c.activo }"
+        <div class="area-group-items">
+          <article
+            v-for="a in grupo.auditorias"
+            :key="a.id"
+            class="auditoria-card"
+            :class="[
+              { 'auditoria-card--inactive': !a.activa },
+              { 'auditoria-card--expanded': estaExpandida(a.id) }
+            ]"
+          >
+            <button
+              type="button"
+              class="auditoria-card-header"
+              :aria-expanded="estaExpandida(a.id)"
+              :aria-controls="`auditoria-body-${a.id}`"
+              @click="toggleExpand(a.id)"
             >
-              <template v-if="criterioEditId === c.id">
-                <div class="criterio-edit">
-                  <span class="criterio-orden-input">
-                    <input v-model.number="criterioEditOrden" type="number" min="1" class="cell-input" />
-                  </span>
-                  <input v-model="criterioEditDesc" class="criterio-input" @keyup.enter="guardarEdicionCriterio(a.id)" @keyup.escape="cancelarEdicionCriterio" />
-                  <div class="criterio-actions">
-                    <button class="icon-btn icon-btn--ok" :disabled="criterioEditGuardando" title="Guardar" aria-label="Guardar" @click="guardarEdicionCriterio(a.id)">
-                      <svg viewBox="0 0 16 16" aria-hidden="true">
-                        <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                    </button>
-                    <button class="icon-btn icon-btn--cancel" title="Cancelar" aria-label="Cancelar" @click="cancelarEdicionCriterio">
-                      <svg viewBox="0 0 16 16" aria-hidden="true">
-                        <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </template>
-              <template v-else>
-                <span class="criterio-orden">{{ c.orden }}</span>
-                <span class="criterio-desc">{{ c.descripcion }}</span>
-                <div v-if="authStore.isAdmin" class="criterio-actions">
-                  <button class="icon-btn" title="Editar criterio" aria-label="Editar criterio" @click="iniciarEdicionCriterio(c)">
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
-                    </svg>
-                  </button>
-                  <button class="icon-btn" :title="c.activo ? 'Desactivar criterio' : 'Activar criterio'" :aria-label="c.activo ? 'Desactivar criterio' : 'Activar criterio'" @click="toggleEstadoCriterio(a.id, c)">
-                    <svg v-if="c.activo" viewBox="0 0 16 16" aria-hidden="true">
-                      <rect x="4" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
-                      <rect x="9" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
-                    </svg>
-                    <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M5 3l8 5-8 5V3z" fill="currentColor"/>
-                    </svg>
-                  </button>
-                </div>
-              </template>
-            </li>
-          </ul>
-
-          <div v-if="authStore.isAdmin" class="criterio-add-bar">
-            <input v-model.number="nuevaCriterioOrden" type="number" min="1" class="cell-input" title="Orden" />
-            <input v-model="nuevaCriterioDesc" placeholder="Nuevo criterio…" class="criterio-input" @keyup.enter="handleCrearCriterio(a.id)" />
-            <button class="btn-primary btn-small" :disabled="criterioAgregando" @click="handleCrearCriterio(a.id)">
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-              Agregar
+              <div class="auditoria-card-title">
+                <svg class="chevron" :class="{ 'chevron--open': estaExpandida(a.id) }" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M5 3l6 5-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h3>{{ a.nombre }}</h3>
+                <span class="badge" :class="a.activa ? 'badge-on' : 'badge-off'">
+                  {{ a.activa ? 'Activa' : 'Inactiva' }}
+                </span>
+              </div>
+              <div v-if="authStore.isAdmin" class="auditoria-card-actions" @click.stop>
+                <button
+                  class="icon-btn"
+                  title="Editar auditoría"
+                  aria-label="Editar auditoría"
+                  @click="abrirModalEditar(a)"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button
+                  class="icon-btn icon-btn--danger"
+                  title="Eliminar auditoría"
+                  aria-label="Eliminar auditoría"
+                  @click="eliminarAuditoria(a)"
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2.5 4h11M6.5 4V2.5h3V4M4 4l.5 9.5h7L12 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
             </button>
-          </div>
+
+            <div class="auditoria-card-meta">
+              <span class="badge meta-badge">{{ a.capa_nombre }}</span>
+              <span class="badge meta-badge">{{ a.frecuencia_nombre }}</span>
+              <span class="meta-text">
+                {{ criterioStore.criteriosDe(a.id).length }} criterios
+              </span>
+            </div>
+
+            <div
+              v-show="estaExpandida(a.id)"
+              :id="`auditoria-body-${a.id}`"
+              class="auditoria-card-body"
+            >
+              <div class="criterios-header">Criterios</div>
+
+              <ul v-if="criterioStore.criteriosDe(a.id).length > 0" class="criterio-list">
+                <li
+                  v-for="c in criterioStore.criteriosDe(a.id)"
+                  :key="c.id"
+                  class="criterio-item"
+                  :class="{ 'criterio-item--inactive': !c.activo }"
+                >
+                  <template v-if="criterioEditId === c.id">
+                    <div class="criterio-edit">
+                      <span class="criterio-orden-input">
+                        <input v-model.number="criterioEditOrden" type="number" min="1" class="cell-input" />
+                      </span>
+                      <input v-model="criterioEditDesc" class="criterio-input" @keyup.enter="guardarEdicionCriterio(a.id)" @keyup.escape="cancelarEdicionCriterio" />
+                      <div class="criterio-actions">
+                        <button class="icon-btn icon-btn--ok" :disabled="criterioEditGuardando" title="Guardar" aria-label="Guardar" @click="guardarEdicionCriterio(a.id)">
+                          <svg viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M3 8l3.5 3.5L13 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </button>
+                        <button class="icon-btn icon-btn--cancel" title="Cancelar" aria-label="Cancelar" @click="cancelarEdicionCriterio">
+                          <svg viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <span class="criterio-orden">{{ c.orden }}</span>
+                    <span class="criterio-desc">{{ c.descripcion }}</span>
+                    <div v-if="authStore.isAdmin" class="criterio-actions">
+                      <button class="icon-btn" title="Editar criterio" aria-label="Editar criterio" @click="iniciarEdicionCriterio(c)">
+                        <svg viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
+                        </svg>
+                      </button>
+                      <button class="icon-btn" :title="c.activo ? 'Desactivar criterio' : 'Activar criterio'" :aria-label="c.activo ? 'Desactivar criterio' : 'Activar criterio'" @click="toggleEstadoCriterio(a.id, c)">
+                        <svg v-if="c.activo" viewBox="0 0 16 16" aria-hidden="true">
+                          <rect x="4" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
+                          <rect x="9" y="3" width="3" height="10" rx="0.5" fill="currentColor"/>
+                        </svg>
+                        <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                          <path d="M5 3l8 5-8 5V3z" fill="currentColor"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </template>
+                </li>
+              </ul>
+
+              <div v-if="authStore.isAdmin" class="criterio-add-bar">
+                <input v-model.number="nuevaCriterioOrden" type="number" min="1" class="cell-input" title="Orden" />
+                <input v-model="nuevaCriterioDesc" placeholder="Nuevo criterio…" class="criterio-input" @keyup.enter="handleCrearCriterio(a.id)" />
+                <button class="btn-primary btn-small" :disabled="criterioAgregando" @click="handleCrearCriterio(a.id)">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  </svg>
+                  Agregar
+                </button>
+              </div>
+            </div>
+          </article>
         </div>
-      </article>
+      </section>
     </div>
 
     <!-- Modal: crear auditoría -->
@@ -800,6 +843,45 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 /* --- Lista --- */
 .auditorias-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.area-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.area-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.15rem;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.area-group-header h2 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #1d4ed8;
+}
+
+.area-group-count {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
+}
+
+.area-group-items {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
