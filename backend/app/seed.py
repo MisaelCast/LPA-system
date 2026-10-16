@@ -41,10 +41,6 @@ _AUDITORIA_ENSAMBLE_FINAL_FORMATO = "FOR.QA.018"
 _AUDITORIA_PULIDO_NOMBRE = "Auditoría de Proceso - Pulido"
 _AUDITORIA_PULIDO_DESCRIPCION = "Auditoría de proceso para el área de Pulido."
 
-_PULIDO_SECCION_LIJADO_FRONTAL = "1. LIJADO CARA FRONTAL"
-_PULIDO_SECCION_LIJADO_TRASERA = "2. LIJADO CARA TRASERA"
-_PULIDO_SECCION_MECANISMO = "3. MECANISMO"
-
 _AUDITORIA_VERIFICACION_SUFIJO = "Auditoría de Verificación"
 _AUDITORIA_VERIFICACION_DESCRIPCION = (
     "Verificación semanal del trabajo del Auditor (meta-auditoría)."
@@ -70,220 +66,69 @@ _CRITERIOS_VERIFICACION_SUPERVISOR = [
     "correctiva para evitar su repetición.",
 ]
 
-
-def _criterio_pulido(
-    texto: str,
-    seccion: str,
-    subseccion: str | None = None,
-    subtitulo: str | None = None,
-) -> tuple[str, str, str | None, str | None]:
-    """Define un criterio de Pulido con su jerarquía de encabezados.
-
-    Retorna ``(descripcion, seccion, subseccion, subtitulo)`` para que la
-    descripción quede limpia y la jerarquía se guarde en campos separados;
-    la interfaz la presenta como encabezados/separadores visuales.
-    """
-    return (texto, seccion, subseccion, subtitulo)
-
-
-_CRITERIOS_PULIDO = [
-    _criterio_pulido(
-        "El colaborador está entrenado y cuenta con la hoja de validación.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
+_PULIDO_AUDITORIAS: list[tuple[str, list[str]]] = [
+    (
+        "Pulido - Lijado de Cara Frontal",
+        [
+            "El colaborador está entrenado y cuenta con la hoja de validación vigente.",
+            "El colaborador realiza la inspección de entrada (Check) de la pieza.",
+            "La lijadora orbital cuenta con el tope pokayoke para RPM y está a 3/8 de vuelta.",
+            "El colaborador inicia el lijado por la parte superior (cuernos) con tres ciclos e intervalos de limpieza.",
+            "El colaborador realiza el lijado de cara frontal con tres ciclos de 8-9 recorridos por ciclo.",
+            'Aplica el método "H" o cruzado haciendo dos intervalos de limpieza por ciclo.',
+            "Consume dos caras por lija (GRANO 1000) y limpia la lija con borrador después de cada ciclo.",
+        ],
     ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de entrada (Check).",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
+    (
+        "Pulido - Lijado de Cara Trasera",
+        [
+            "El colaborador está entrenado y cuenta con la hoja de validación vigente.",
+            "El colaborador realiza la inspección de entrada (Check) de la pieza.",
+            "La lijadora orbital cuenta con el tope pokayoke para RPM y está a 3/8 de vuelta.",
+            "El colaborador realiza el lijado de cara trasera con el recorrido y los ciclos establecidos.",
+            "Mantiene presión y tiempo uniformes para evitar sobre-lijado en la cara trasera.",
+            "Limpia la pieza y la lija entre ciclos sin accionar la orbital sobre la almohadilla.",
+            "Verifica visualmente la uniformidad y la ausencia de marcas en la cara trasera.",
+        ],
     ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
+    (
+        "Pulido - Lijado de Laterales",
+        [
+            "El colaborador está entrenado y cuenta con la hoja de validación vigente.",
+            "El colaborador realiza la inspección de entrada (Check) de la pieza.",
+            "Emplea la herramienta o boquilla adecuada para el lijado de laterales.",
+            "Realiza el lijado de laterales con el recorrido y los ciclos definidos.",
+            "Evita redondear bordes o aristas fuera de especificación.",
+            "Limpia la lija y la pieza entre ciclos.",
+            "Confirma un acabado uniforme en ambos laterales.",
+        ],
     ),
-    _criterio_pulido(
-        "El colaborador inicia con el lijado parte superior del cuerpo (cuernos); tres ciclos (haciendo 2 intervalos de limpieza).",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
+    (
+        "Pulido - Mecanismo y Manejo de la Pieza",
+        [
+            "El colaborador está entrenado y cuenta con la hoja de validación vigente.",
+            "Manipula la pieza con el mecanismo o dispositivo correcto sin dañar la superficie.",
+            "Utiliza el equipo de protección personal y el manejo ergonómico establecido.",
+            "El dispositivo de sujeción está en buen estado y calibrado.",
+            "No acciona la orbital sobre la almohadilla al limpiar la lija.",
+            "Sigue la secuencia de manejo de la pieza para evitar re-trabajos.",
+            "Verifica que la pieza no presente daños por manejo.",
+        ],
     ),
-    _criterio_pulido(
-        "El colaborador realiza el lijado de cara con tres ciclos con 8-9 recorridos por ciclo haciendo 2 intervalos de limpieza.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        'El colaborador realiza el método "H" o cruzado haciendo 2 intervalos de limpieza por ciclo.',
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El consumo es de dos caras por lija GRAMO 1000.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza de la lija con borrador después de cada ciclo de lijado sin accionar la orbital en la almohadilla.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza del cuerpo con trapo después de cada medio ciclo de lijado.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador inicia con el lijado parte superior del cuerpo (cuernos); tres ciclos (haciendo 2 intervalos de limpieza).",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        'El colaborador realiza el método "H" o cruzado haciendo 2 intervalos de limpieza por ciclo.',
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza el lijado de cara con tres ciclos con 8-9 recorridos por ciclo haciendo 2 intervalos de limpieza.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El consumo es de una lija por cara.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza de la lija con borrador después de cada ciclo de lijado sin accionar la orbital en la almohadilla.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza del cuerpo con trapo después de cada medio ciclo de lijado.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de salida (Check).",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "La mesa de trabajo y los IPK's se encuentran en buenas condiciones.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "La iluminación se encuentra en buen estado.",
-        _PULIDO_SECCION_LIJADO_FRONTAL, "1.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "El colaborador está entrenado y cuenta con la hoja de validación.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de entrada (Check).",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador inicia con el lijado parte superior del cuerpo (cuernos); tres ciclos (haciendo 2 intervalos de limpieza).",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza el lijado de cara con tres ciclos con 8-9 recorridos por ciclo haciendo 2 intervalos de limpieza.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        'El colaborador realiza el método "H" o cruzado haciendo 2 intervalos de limpieza por ciclo.',
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El consumo es de dos caras por lija GRAMO 1000.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza de la lija con borrador después de cada ciclo de lijado sin accionar la orbital en la almohadilla.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza del cuerpo con trapo después de cada medio ciclo de lijado.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Cara",
-    ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.1 P1000", "Lado",
-    ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador inicia con el lijado parte superior del cuerpo (cuernos); tres ciclos (haciendo 2 intervalos de limpieza).",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        'El colaborador realiza el método "H" o cruzado haciendo 2 intervalos de limpieza por ciclo.',
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza el lijado de cara con tres ciclos con 8-9 recorridos por ciclo haciendo 2 intervalos de limpieza.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El consumo es de una lija por cara.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza de la lija con borrador después de cada ciclo de lijado sin accionar la orbital en la almohadilla.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la limpieza del cuerpo con trapo después de cada medio ciclo de lijado.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "Validar que la lijadora orbital cuente con el tope pokayoke para RPM y esté a 3/8 de vuelta.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Cara",
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de salida (Check).",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "La mesa de trabajo y los IPK's se encuentran en buenas condiciones.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "La iluminación se encuentra en buen estado.",
-        _PULIDO_SECCION_LIJADO_TRASERA, "2.2 P1200", "Lado",
-    ),
-    _criterio_pulido(
-        "El colaborador está entrenado y cuenta con la hoja de validación.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de entrada (Check).",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "Lijado contornos (Lija 15 M).",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "El mecanismo tiene las protecciones adecuadas para no generar defectos en la operación.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "Validar que los RPM del mecanismo son 850 y que la presión de la plancha es la correcta.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "Asegurarse que tenga los insertos y/o cinta adhesiva bien colocados en el caso de necesitarlos.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "Pulir caras (solo usar barra Rosa), 4 aplicaciones.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "Pulir cuello / neck pocket.",
-        _PULIDO_SECCION_MECANISMO,
-    ),
-    _criterio_pulido(
-        "El colaborador realiza la inspección de salida buscando orbitales (Check).",
-        _PULIDO_SECCION_MECANISMO,
+    (
+        "Pulido - Inspección Final y Limpieza",
+        [
+            "El colaborador está entrenado y cuenta con la hoja de validación vigente.",
+            "Realiza la inspección de salida (Check) contra el estándar.",
+            "Verifica la ausencia de rebaba y marcas, y la uniformidad del acabado.",
+            "Confirma que la pieza esté libre de residuos y polvo.",
+            "Registra la inspección en el formato correspondiente.",
+            "Ordena y limpia el puesto de trabajo al finalizar (5S).",
+            "Coloca la pieza en el contenedor o ubicación correcta.",
+        ],
     ),
 ]
+
 
 _CRITERIOS_ENSAMBLE_FINAL = [
     "Se realiza inspección establecida en cada estación (Check Do Check).",
@@ -439,12 +284,12 @@ def _seed_auditoria_ensamble_final(session: Session) -> None:
 
 
 def _seed_auditoria_pulido(session: Session) -> None:
-    """Crea la auditoría de proceso para Pulido con sus 49 criterios.
+    """Reemplaza la auditoría de Pulido por 5 auditorías semanales.
 
-    Es idempotente y correctiva: busca por nombre la auditoría y los criterios
-    por auditoria_id + orden. No duplica si ya existen; si un criterio ya
-    existe, sincroniza su descripción y jerarquía para corregir datos previos
-    sin crear filas nuevas.
+    Crea (idempotente y correctiva) 5 auditorías de 7 criterios cada una,
+    marcadas con ``programacion_semanal`` para que su día se sortee cada
+    semana. La auditoría anterior "Auditoría de Proceso - Pulido" se
+    desactiva para conservar su historial sin mostrarla.
     """
     capa = session.exec(select(Capa).where(Capa.nombre == "Auditor")).first()
     if capa is None:
@@ -458,49 +303,53 @@ def _seed_auditoria_pulido(session: Session) -> None:
     if frecuencia is None:
         raise ValueError("La frecuencia 'Diaria' no existe. Ejecute primero el seed de frecuencias.")
 
-    auditoria = session.exec(
+    # Desactiva la auditoría previa de Pulido (conserva historial).
+    anterior = session.exec(
         select(Auditoria).where(Auditoria.nombre == _AUDITORIA_PULIDO_NOMBRE)
     ).first()
+    if anterior is not None and anterior.activa:
+        anterior.activa = False
+        session.add(anterior)
 
-    if auditoria is None:
-        auditoria = Auditoria(
-            nombre=_AUDITORIA_PULIDO_NOMBRE,
-            descripcion=_AUDITORIA_PULIDO_DESCRIPCION,
-            activa=True,
-            capa_id=capa.id,
-            frecuencia_id=frecuencia.id,
-            area_id=area.id,
-        )
-        session.add(auditoria)
-        session.flush()
-
-    for i, (descripcion, seccion, subseccion, subtitulo) in enumerate(
-        _CRITERIOS_PULIDO, start=1
-    ):
-        existente = session.exec(
-            select(Criterio).where(
-                Criterio.auditoria_id == auditoria.id,
-                Criterio.orden == i,
-            )
+    for nombre, criterios in _PULIDO_AUDITORIAS:
+        auditoria = session.exec(
+            select(Auditoria).where(Auditoria.nombre == nombre)
         ).first()
-        if existente is None:
-            session.add(
-                Criterio(
-                    descripcion=descripcion,
-                    orden=i,
-                    activo=True,
-                    auditoria_id=auditoria.id,
-                    seccion=seccion,
-                    subseccion=subseccion,
-                    subtitulo=subtitulo,
-                )
+        if auditoria is None:
+            auditoria = Auditoria(
+                nombre=nombre,
+                descripcion=_AUDITORIA_PULIDO_DESCRIPCION,
+                activa=True,
+                programacion_semanal=True,
+                capa_id=capa.id,
+                frecuencia_id=frecuencia.id,
+                area_id=area.id,
             )
-        else:
-            existente.descripcion = descripcion
-            existente.seccion = seccion
-            existente.subseccion = subseccion
-            existente.subtitulo = subtitulo
-            session.add(existente)
+            session.add(auditoria)
+            session.flush()
+        elif not auditoria.programacion_semanal:
+            auditoria.programacion_semanal = True
+            session.add(auditoria)
+
+        for i, descripcion in enumerate(criterios, start=1):
+            existente = session.exec(
+                select(Criterio).where(
+                    Criterio.auditoria_id == auditoria.id,
+                    Criterio.orden == i,
+                )
+            ).first()
+            if existente is None:
+                session.add(
+                    Criterio(
+                        descripcion=descripcion,
+                        orden=i,
+                        activo=True,
+                        auditoria_id=auditoria.id,
+                    )
+                )
+            else:
+                existente.descripcion = descripcion
+                session.add(existente)
 
     session.commit()
 

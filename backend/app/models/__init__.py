@@ -11,6 +11,7 @@ from app.models.frecuencia import Frecuencia
 from app.models.hallazgo import Hallazgo
 from app.models.hallazgo_responsable import HallazgoResponsable
 from app.models.hallazgo_seguimiento import HallazgoSeguimiento
+from app.models.programacion_semanal import ProgramacionSemanal
 from app.models.respuesta import Respuesta
 from app.models.rol import Rol
 from app.models.usuario import Usuario
@@ -30,6 +31,7 @@ __all__ = [
     "Hallazgo",
     "HallazgoResponsable",
     "HallazgoSeguimiento",
+    "ProgramacionSemanal",
     "Respuesta",
     "Rol",
     "Usuario",

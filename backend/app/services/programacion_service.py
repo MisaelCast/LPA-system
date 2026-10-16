@@ -13,6 +13,7 @@ from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
+from app.services.programacion_semanal_service import auditoria_del_dia
 from app.utils.tiempo import ahora_business
 
 
@@ -273,10 +274,31 @@ def generar_pendientes(
     creadas = 0
     marcadas = marcar_no_elaboradas(session, ahora)
 
+    # Auditoría semanal programada hoy, por área (según el sorteo vigente).
+    programadas_de_hoy: dict[int, int | None] = {}
+    for auditoria in auditories:
+        if not auditoria.programacion_semanal or auditoria.area_id is None:
+            continue
+        if auditoria.area_id not in programadas_de_hoy:
+            grupo = [
+                a
+                for a in auditories
+                if a.programacion_semanal and a.area_id == auditoria.area_id
+            ]
+            del_dia = auditoria_del_dia(session, grupo, ahora)
+            programadas_de_hoy[auditoria.area_id] = (
+                del_dia.id if del_dia is not None else None
+            )
+
     for auditoria in auditories:
         frecuencia = session.get(Frecuencia, auditoria.frecuencia_id)
         if frecuencia is None:
             continue
+
+        # Las auditorías semanales solo generan pendiente el día sorteado.
+        if auditoria.programacion_semanal:
+            if programadas_de_hoy.get(auditoria.area_id) != auditoria.id:
+                continue
 
         habilita = fecha_habilita(auditoria, frecuencia, ahora)
         if habilita is not None and ahora < habilita:

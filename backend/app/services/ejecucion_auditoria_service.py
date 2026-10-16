@@ -27,6 +27,7 @@ from app.services.programacion_service import (
     periodo_auditoria,
     siguiente_habilita,
 )
+from app.services.programacion_semanal_service import auditoria_del_dia
 from app.utils.tiempo import ahora_business
 
 _VALORES_POR_TIPO_RESPUESTA: dict[str, set[str]] = {
@@ -224,7 +225,19 @@ class EjecucionAuditoriaService:
                 query = query.where(Auditoria.id == -1)
 
         auditorias = list(self._session.exec(query).all())
-        return [self._enriquecer_auditoria(a) for a in auditorias]
+
+        # Las auditorías con programación semanal solo están disponibles el
+        # día que les tocó por sorteo (lunes a viernes).
+        programadas = [a for a in auditorias if a.programacion_semanal]
+        normales = [a for a in auditorias if not a.programacion_semanal]
+        if programadas:
+            del_dia = auditoria_del_dia(
+                self._session, programadas, ahora_business()
+            )
+            if del_dia is not None:
+                normales.append(del_dia)
+
+        return [self._enriquecer_auditoria(a) for a in normales]
 
     def _enriquecer_auditoria(self, auditoria: Auditoria) -> Auditoria:
         object.__setattr__(auditoria, "capa_nombre", "")

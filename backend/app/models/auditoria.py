@@ -21,6 +21,7 @@ class Auditoria(SQLModel, table=True):
     activa: bool = Field(default=True)
     tipo_respuesta: str = Field(default="semaforo", max_length=20)
     dia_semana: int | None = Field(default=None, ge=0, le=6)
+    programacion_semanal: bool = Field(default=False)
     capa_id: int = Field(foreign_key="capa.id")
     frecuencia_id: int = Field(foreign_key="frecuencia.id")
     area_id: int | None = Field(default=None, foreign_key="area.id")
