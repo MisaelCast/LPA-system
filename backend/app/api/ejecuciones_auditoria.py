@@ -21,12 +21,14 @@ from app.schemas.ejecucion_auditoria import (
     PendienteItem,
 )
 from app.schemas.hallazgo import HallazgoDetallado
+from app.schemas.programacion_semanal import PlanSemanalRead
 from app.services.ejecucion_auditoria_service import (
     DiaNoHabilitadoError,
     EjecucionAbiertaError,
     EjecucionAuditoriaService,
 )
 from app.services.hallazgo_service import HallazgoService
+from app.services.programacion_semanal_service import plan_semanal_usuario
 
 router = APIRouter(
     prefix="/ejecuciones-auditoria",
@@ -145,6 +147,22 @@ def listar_pendientes(
     """
     service = EjecucionAuditoriaService(session)
     return service.mis_pendientes(usuario)
+
+
+@router.get("/programacion-semanal", response_model=PlanSemanalRead)
+def obtener_programacion_semanal(
+    session: Session = Depends(get_session),
+    usuario: Usuario = Depends(
+        require_roles("Auditor", "Supervisor", "Gerente", "Administrador")
+    ),
+):
+    """Planificación semanal (lunes a viernes) de las auditorías con sorteo.
+
+    Devuelve, agrupadas por área, las auditorías que le tocarán cada día hábil
+    de la semana vigente. Para Supervisores, Gerentes y Auditores se limita a
+    sus áreas asignadas.
+    """
+    return plan_semanal_usuario(session, usuario)
 
 
 @router.post(

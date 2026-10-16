@@ -19,6 +19,7 @@ from app.services.programacion_semanal_service import (
     auditoria_del_dia,
     calendario_de_semana,
     lunes_de,
+    plan_semanal_usuario,
 )
 from app.services.programacion_service import generar_pendientes
 
@@ -160,3 +161,67 @@ class TestGeneracionRespetandoSorteo:
         del_dia = auditoria_del_dia(session, auditorias, LUNES)
         assert ejecuciones[0].auditoria_id == del_dia.id
         assert ejecuciones[0].usuario_id == auditor.id
+
+
+class TestPlanSemanal:
+    """Pruebas del plan lunes a viernes que se muestra a auditor/supervisor."""
+
+    def _usuario(self, session: Session, rol_nombre: str, area_id: int | None = None) -> Usuario:
+        rol = session.exec(select(Rol).where(Rol.nombre == rol_nombre)).first()
+        if rol is None:
+            rol = Rol(nombre=rol_nombre, descripcion="")
+            session.add(rol)
+            session.commit()
+            session.refresh(rol)
+        usuario = Usuario(
+            nombre=f"Usuario {rol_nombre}",
+            correo=f"{rol_nombre.lower()}@lpa.com",
+            contrasena_hash="x",
+            activo=True,
+            rol_id=rol.id,
+        )
+        session.add(usuario)
+        session.commit()
+        session.refresh(usuario)
+        if area_id is not None:
+            session.add(UsuarioArea(usuario_id=usuario.id, area_id=area_id))
+            session.commit()
+            session.refresh(usuario)
+        return usuario
+
+    def test_muestra_lunes_a_viernes_con_el_sorteo(self, session: Session):
+        auditorias = _base(session)
+        usuario = self._usuario(session, "Auditor", auditorias[0].area_id)
+
+        plan = plan_semanal_usuario(session, usuario, LUNES)
+
+        assert plan.semana_inicio == "2026-10-12"
+        assert plan.semana_fin == "2026-10-18"
+        assert [a.area_nombre for a in plan.areas] == ["Pulido"]
+        dias = plan.areas[0].dias
+        assert [d.nombre_dia for d in dias] == [
+            "Lunes", "Martes", "Miércoles", "Jueves", "Viernes",
+        ]
+        assert {d.auditoria_id for d in dias} == {a.id for a in auditorias}
+        assert all(d.auditoria_nombre for d in dias)
+        # Solo el día de referencia está marcado como «hoy».
+        assert [d.es_hoy for d in dias].count(True) == 1
+        assert dias[0].es_hoy is True
+
+    def test_admin_ve_todas_las_areas_con_sorteo(self, session: Session):
+        _base(session)
+        session.add(Area(nombre="Ensamble Final", descripcion="", activa=True))
+        session.commit()
+        usuario = self._usuario(session, "Administrador")
+
+        plan = plan_semanal_usuario(session, usuario, LUNES)
+
+        assert [a.area_nombre for a in plan.areas] == ["Pulido"]
+
+    def test_auditor_sin_areas_asignadas_no_ve_plan(self, session: Session):
+        _base(session)
+        usuario = self._usuario(session, "Auditor")
+
+        plan = plan_semanal_usuario(session, usuario, LUNES)
+
+        assert plan.areas == []

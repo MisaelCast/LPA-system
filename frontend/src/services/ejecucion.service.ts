@@ -11,10 +11,17 @@ import type {
   OpcionesFiltrosRevision,
   PendienteItem,
 } from '@/types/ejecucion'
+import type { PlanSemanal } from '@/types/programacion'
 
 export function obtenerAuditoriasDisponibles(): Promise<Auditoria[]> {
   return api
     .get<Auditoria[]>('/ejecuciones-auditoria/disponibles')
+    .then((res) => res.data)
+}
+
+export function obtenerPlanSemanal(): Promise<PlanSemanal> {
+  return api
+    .get<PlanSemanal>('/ejecuciones-auditoria/programacion-semanal')
     .then((res) => res.data)
 }
 

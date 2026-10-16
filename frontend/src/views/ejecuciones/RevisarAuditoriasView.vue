@@ -14,6 +14,7 @@ import {
 } from '@/services/ejecucion.service'
 import { listarHallazgos } from '@/services/hallazgo.service'
 import type { HallazgoDetallado, HallazgoFiltros } from '@/types/hallazgo'
+import PlanSemanal from '@/components/PlanSemanal.vue'
 
 const cargando = ref(false)
 const error = ref('')
@@ -231,6 +232,8 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
         <p class="subtitle">Consulta las auditorías y los hallazgos de los auditores.</p>
       </div>
     </header>
+
+    <PlanSemanal />
 
     <div class="tabs">
       <button

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Auditoria } from '@/types/auditoria'
 import type { Area, Celula } from '@/types/area'
 import type { EjecucionAuditoria, CriterioRespuesta } from '@/types/ejecucion'
+import PlanSemanal from '@/components/PlanSemanal.vue'
 import {
   obtenerAuditoriasDisponibles,
   obtenerCelulasDisponibles,
@@ -527,6 +528,8 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
     <!-- Paso 1: Seleccionar auditoría -->
     <div v-if="paso === 'seleccionar'" class="seleccion">
+      <PlanSemanal />
+
       <div v-if="auditorias.length === 0" class="state state-empty">
         <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 3h14v18H5z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/>
