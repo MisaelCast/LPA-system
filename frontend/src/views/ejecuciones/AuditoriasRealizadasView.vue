@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import type { Auditoria } from '@/types/auditoria'
 import type {
   EjecucionAuditoriaListItem,
@@ -14,7 +13,6 @@ import {
 import { listarEvidencias } from '@/services/hallazgo.service'
 import type { Evidencia } from '@/types/hallazgo'
 
-const router = useRouter()
 
 const cargando = ref(false)
 const error = ref('')
@@ -92,14 +90,6 @@ function estadoInfo(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | 
   return { label: 'En progreso', cls: 'badge-progreso' }
 }
 
-function esFinalizada(estado: string): boolean {
-  return estado === 'finalizada'
-}
-
-function puedeContinuar(e: EjecucionAuditoriaListItem | EjecucionAuditoriaDetalle | null): boolean {
-  return !!e && !esFinalizada(e.estado) && e.estado !== 'no_elaborada'
-}
-
 async function abrirDetalle(e: EjecucionAuditoriaListItem) {
   detalleAbierto.value = true
   detalleCargando.value = true
@@ -137,18 +127,6 @@ function cerrarDetalle() {
   detalleAbierto.value = false
   detalle.value = null
   evidenciasPorHallazgo.value = {}
-}
-
-function continuar(e: EjecucionAuditoriaListItem) {
-  router.push({ name: 'ejecutar', query: { id: String(e.id) } })
-}
-
-function continuarDesdeDetalle() {
-  const id = detalle.value?.id
-  if (id) {
-    cerrarDetalle()
-    router.push({ name: 'ejecutar', query: { id: String(id) } })
-  }
 }
 
 function esCumplimiento(item: { tipo_respuesta?: string } | null | undefined): boolean {
@@ -234,9 +212,6 @@ function evidenciasDe(hallazgoId: number | null): Evidencia[] {
       </svg>
       <h2>Aún no hay ejecuciones</h2>
       <p>Cuando inicies una auditoría, su historial aparecerá aquí.</p>
-      <button class="btn-primary" @click="router.push('/ejecutar')">
-        Ejecutar auditoría
-      </button>
     </div>
 
     <!-- Tabla -->
@@ -312,13 +287,6 @@ function evidenciasDe(hallazgoId: number | null): Evidencia[] {
                 @click.stop="abrirDetalle(e)"
               >
                 Ver
-              </button>
-              <button
-                v-if="puedeContinuar(e)"
-                class="btn btn-sm primary"
-                @click.stop="continuar(e)"
-              >
-                Continuar
               </button>
             </td>
           </tr>
@@ -462,13 +430,6 @@ function evidenciasDe(hallazgoId: number | null): Evidencia[] {
         <footer class="modal-footer">
           <button class="btn-secondary" @click="cerrarDetalle">
             Cerrar
-          </button>
-          <button
-            v-if="puedeContinuar(detalle)"
-            class="btn-primary"
-            @click="continuarDesdeDetalle"
-          >
-            Continuar auditoría
           </button>
         </footer>
       </div>

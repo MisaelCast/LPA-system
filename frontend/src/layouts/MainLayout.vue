@@ -47,7 +47,6 @@ const grupos = computed(() => [
   {
     titulo: 'MI TRABAJO',
     items: [
-      { to: '/ejecutar', label: 'Ejecutar Auditoría', icon: 'play', visible: !authStore.isAdmin && !authStore.isResponsable },
       { to: '/mis-pendientes', label: 'Mis pendientes', icon: 'pend', visible: !authStore.isAdmin && !authStore.isResponsable },
       { to: '/auditorias-realizadas', label: 'Auditorías realizadas', icon: 'history', visible: !authStore.isAdmin && !authStore.isResponsable },
       { to: '/hallazgos', label: 'Hallazgos', icon: 'flag', visible: !authStore.isAdmin && !authStore.isResponsable },

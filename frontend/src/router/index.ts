@@ -59,7 +59,8 @@ const router = createRouter({
           path: 'ejecutar',
           name: 'ejecutar',
           component: () => import('@/views/ejecuciones/EjecucionAuditoriaView.vue'),
-          meta: { roles: ['Auditor', 'Supervisor', 'Gerente', 'Administrador'] },
+          // Módulo retirado: no está disponible para ningún rol.
+          meta: { roles: [] },
         },
         {
           path: 'mis-pendientes',
