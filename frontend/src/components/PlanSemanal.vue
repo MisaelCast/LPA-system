@@ -3,6 +3,10 @@ import { computed, onMounted, ref } from 'vue'
 import { obtenerPlanSemanal } from '@/services/ejecucion.service'
 import type { PlanSemanal } from '@/types/programacion'
 
+withDefaults(defineProps<{ mostrarVacio?: boolean }>(), {
+  mostrarVacio: false,
+})
+
 const cargando = ref(true)
 const plan = ref<PlanSemanal | null>(null)
 
@@ -31,7 +35,10 @@ const corto = (nombre: string) => nombre.slice(0, 3)
 </script>
 
 <template>
-  <section v-if="cargando || tienePlan" class="plan">
+  <section
+    v-if="cargando || tienePlan || mostrarVacio"
+    class="plan"
+  >
     <header class="plan-header">
       <div class="plan-header-texto">
         <h2>Planificación de la semana</h2>
@@ -44,23 +51,33 @@ const corto = (nombre: string) => nombre.slice(0, 3)
       <div class="plan-spinner"></div>
     </div>
 
-    <div v-else v-for="area in plan?.areas" :key="area.area_id" class="plan-area">
-      <div class="plan-dias">
-        <div
-          v-for="dia in area.dias"
-          :key="dia.dia_semana"
-          class="plan-dia"
-          :class="{ 'plan-dia--hoy': dia.es_hoy }"
-        >
-          <div class="plan-dia-top">
-            <span class="plan-dia-nombre">{{ corto(dia.nombre_dia) }}</span>
-            <span class="plan-dia-fecha">{{ dia.fecha.slice(8, 10) }}</span>
-            <span v-if="dia.es_hoy" class="plan-hoy">Hoy</span>
+    <p v-else-if="!tienePlan" class="plan-vacio">
+      No hay auditorías con programación semanal asignadas a tus áreas.
+    </p>
+
+    <template v-else>
+      <div
+        v-for="area in plan?.areas"
+        :key="area.area_id"
+        class="plan-area"
+      >
+        <div class="plan-dias">
+          <div
+            v-for="dia in area.dias"
+            :key="dia.dia_semana"
+            class="plan-dia"
+            :class="{ 'plan-dia--hoy': dia.es_hoy }"
+          >
+            <div class="plan-dia-top">
+              <span class="plan-dia-nombre">{{ corto(dia.nombre_dia) }}</span>
+              <span class="plan-dia-fecha">{{ dia.fecha.slice(8, 10) }}</span>
+              <span v-if="dia.es_hoy" class="plan-hoy">Hoy</span>
+            </div>
+            <p class="plan-dia-auditoria">{{ dia.auditoria_nombre || 'Sin auditoría' }}</p>
           </div>
-          <p class="plan-dia-auditoria">{{ dia.auditoria_nombre || 'Sin auditoría' }}</p>
         </div>
       </div>
-    </div>
+    </template>
   </section>
 </template>
 
@@ -132,6 +149,17 @@ const corto = (nombre: string) => nombre.slice(0, 3)
   margin-top: 0.75rem;
   padding-top: 0.75rem;
   border-top: 1px solid #f1f5f9;
+}
+
+.plan-vacio {
+  margin: 0;
+  padding: 1rem 0.75rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px dashed #e2e8f0;
+  border-radius: 0.5rem;
 }
 
 .plan-dias {
