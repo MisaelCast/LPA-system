@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import type { PendienteItem } from '@/types/ejecucion'
-import { listarPendientes } from '@/services/ejecucion.service'
+import {
+  listarPendientes,
+  iniciarPendiente,
+} from '@/services/ejecucion.service'
+
+const router = useRouter()
 
 const cargando = ref(false)
 const error = ref('')
 const pendientes = ref<PendienteItem[]>([])
+const iniciandoId = ref<number | null>(null)
 
 onMounted(cargar)
 
@@ -28,6 +35,29 @@ function formatearFecha(iso: string | null | undefined): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+async function iniciar(p: PendienteItem) {
+  if (!p.ejecucion_id) return
+  iniciandoId.value = p.ejecucion_id
+  error.value = ''
+  try {
+    const ejecucion = await iniciarPendiente(p.ejecucion_id)
+    router.push({ name: 'ejecutar', query: { id: String(ejecucion.id) } })
+  } catch (err) {
+    error.value =
+      (err as { response?: { data?: { detail?: string } } })?.response?.data
+        ?.detail || 'Error al iniciar la auditoría.'
+    await cargar()
+  } finally {
+    iniciandoId.value = null
+  }
+}
+
+function continuar(p: PendienteItem) {
+  if (p.ejecucion_id) {
+    router.push({ name: 'ejecutar', query: { id: String(p.ejecucion_id) } })
+  }
 }
 
 const ESTADO_INFO: Record<string, { label: string; cls: string }> = {
@@ -82,6 +112,7 @@ function areaCelula(p: PendienteItem): string {
             <th>Área · Célula</th>
             <th>Estado</th>
             <th>Contador</th>
+            <th class="col-acciones">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -95,6 +126,26 @@ function areaCelula(p: PendienteItem): string {
               </span>
             </td>
             <td class="col-contador">{{ p.contador || '—' }}</td>
+            <td class="col-acciones" :title="p.tooltip || undefined">
+              <button
+                v-if="p.accion === 'iniciar'"
+                class="btn btn-sm primary"
+                :disabled="iniciandoId === p.ejecucion_id"
+                @click="iniciar(p)"
+              >
+                {{ iniciandoId === p.ejecucion_id ? 'Iniciando…' : 'Iniciar' }}
+              </button>
+              <button
+                v-else-if="p.accion === 'continuar'"
+                class="btn btn-sm primary"
+                @click="continuar(p)"
+              >
+                Continuar
+              </button>
+              <button v-else class="btn btn-sm" disabled title="Se habilita según su programación">
+                —
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
