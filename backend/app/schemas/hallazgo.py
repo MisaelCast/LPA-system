@@ -18,14 +18,19 @@ class HallazgoCreateRequest(HallazgoBase):
 
     ``area_responsable_id`` es opcional: para auditorías de verificación se
     hereda automáticamente el área de la auditoría.
+
+    ``responsable_id`` asigna al Responsable de Manufactura de esa área; si
+    no se envía, el hallazgo queda sin responsable hasta que se asigne.
     """
 
     area_responsable_id: int | None = None
+    responsable_id: int | None = None
 
 
 class HallazgoCreate(HallazgoBase):
     respuesta_id: int
     area_responsable_id: int | None = None
+    responsable_id: int | None = None
 
 
 class HallazgoUpdate(SQLModel):

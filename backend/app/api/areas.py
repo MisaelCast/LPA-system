@@ -9,6 +9,7 @@ from app.db.database import get_session
 from app.models.area import Area
 from app.models.usuario import Usuario
 from app.schemas.area import AreaCreate, AreaEstadoUpdate, AreaRead, AreaUpdate
+from app.schemas.hallazgo import ResponsableResumen
 from app.services.area_service import AreaService
 
 router = APIRouter(tags=["areas"])
@@ -39,6 +40,24 @@ def listar_areas_activas(
     asigna el area responsable de un hallazgo).
     """
     return AreaService(session).listar_activas()
+
+
+@router.get(
+    "/areas/{area_id}/responsables",
+    response_model=list[ResponsableResumen],
+)
+def responsables_del_area(
+    area_id: int,
+    session: Session = Depends(get_session),
+    _: Usuario = Depends(get_current_active_user),
+) -> list[ResponsableResumen]:
+    """Lista los Responsables de Manufactura asignados a un area.
+
+    Se usa al registrar un hallazgo para mostrar los responsables del area
+    en la que se esta ejecutando la auditoria. Devuelve una lista vacia si
+    el area no tiene responsables asignados.
+    """
+    return AreaService(session).responsables(area_id)
 
 
 @router.get("/areas/{area_id}", response_model=AreaRead)

@@ -53,6 +53,7 @@ class EjecucionAuditoriaRead(EjecucionAuditoriaBase):
     usuario_id: int
     celula_id: int | None = None
     auditoria_nombre: str = ""
+    area_id: int | None = None
     area_nombre: str | None = None
     celula_numero: int | None = None
     auditor_nombre: str = ""
@@ -105,7 +106,6 @@ class EjecucionAuditoriaListItem(SQLModel):
 class EjecucionAuditoriaDetalle(EjecucionAuditoriaRead):
     """Detalle completo de una ejecucion incluyendo resumen."""
 
-    area_id: int | None = None
     resumen: EjecucionResumen = EjecucionResumen()
 
 

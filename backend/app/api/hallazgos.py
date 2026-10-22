@@ -109,13 +109,16 @@ def crear_hallazgo(
 ):
     """Crea un hallazgo asociado a una respuesta con valor ``A`` o ``R``.
 
-    El ``respuesta_id`` proviene del path; el body requiere ``descripcion``
-    y ``area_responsable_id``.
+    El ``respuesta_id`` proviene del path; el body requiere ``descripcion`` y
+    acepta ``area_responsable_id`` (opcional, se hereda del área de la
+    auditoría) y ``responsable_id`` para asignar de inmediato al Responsable
+    de Manufactura que atenderá el hallazgo.
     """
     payload = HallazgoCreate(
         descripcion=datos.descripcion,
         respuesta_id=respuesta_id,
         area_responsable_id=datos.area_responsable_id,
+        responsable_id=datos.responsable_id,
     )
     service = HallazgoService(session)
     try:

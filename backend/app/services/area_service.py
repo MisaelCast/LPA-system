@@ -3,8 +3,14 @@
 from sqlmodel import Session, func, select
 
 from app.models.area import Area
+from app.models.rol import Rol
+from app.models.usuario import Usuario
+from app.models.usuario_area import UsuarioArea
 from app.repositories.area_repository import AreaRepository
 from app.schemas.area import AreaCreate, AreaUpdate
+from app.schemas.hallazgo import ResponsableResumen
+
+_ROL_RESPONSABLE = "Responsable de Manufactura"
 
 
 class AreaService:
@@ -21,6 +27,27 @@ class AreaService:
     def listar_activas(self) -> list[Area]:
         """Obtiene las areas activas ordenadas por nombre."""
         return self._repo.listar_activas()
+
+    def responsables(self, area_id: int) -> list[ResponsableResumen]:
+        """Lista los Responsables de Manufactura asignados a un area.
+
+        Devuelve la lista vacia si el area no tiene responsables.
+        """
+        filas = self._session.exec(
+            select(Usuario)
+            .join(UsuarioArea, UsuarioArea.usuario_id == Usuario.id)
+            .join(Rol, Rol.id == Usuario.rol_id)
+            .where(
+                UsuarioArea.area_id == area_id,
+                Rol.nombre == _ROL_RESPONSABLE,
+                Usuario.activo == True,  # noqa: E712
+            )
+            .order_by(Usuario.nombre)
+        ).all()
+        return [
+            ResponsableResumen(id=u.id or 0, nombre=u.nombre, correo=u.correo)
+            for u in filas
+        ]
 
     def obtener_por_id(self, area_id: int) -> Area:
         """Busca un area por su identificador.

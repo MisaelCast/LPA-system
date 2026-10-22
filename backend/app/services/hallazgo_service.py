@@ -13,9 +13,7 @@ from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import ESTADOS_HALLAZGO, Hallazgo
 from app.models.hallazgo_seguimiento import HallazgoSeguimiento
 from app.models.respuesta import Respuesta
-from app.models.rol import Rol
 from app.models.usuario import Usuario
-from app.models.usuario_area import UsuarioArea
 from app.repositories.hallazgo_repository import HallazgoRepository
 from app.repositories.respuesta_repository import RespuestaRepository
 from app.schemas.evidencia import EvidenciaOut
@@ -27,6 +25,7 @@ from app.schemas.hallazgo import (
     ResponsableResumen,
     SeguimientoRead,
 )
+from app.services.area_service import AreaService
 from app.services.evidencia_service import EvidenciaService, url_firmada
 
 
@@ -225,6 +224,12 @@ class HallazgoService:
                 "El area responsable no existe o esta inactiva."
             )
 
+        responsable: Usuario | None = None
+        if datos.responsable_id is not None:
+            responsable = self._validar_responsable(
+                datos.responsable_id, area_id
+            )
+
         hallazgo = Hallazgo(
             descripcion=datos.descripcion,
             fecha_creacion=datetime.now(timezone.utc),
@@ -233,6 +238,20 @@ class HallazgoService:
             area_responsable_id=area_id,
         )
         guardado = self._repo.crear(hallazgo)
+
+        if responsable is not None:
+            guardado.responsables = [responsable]
+            guardado.fecha_limite = datetime.now(timezone.utc) + timedelta(
+                days=settings.hallazgo_plazo_dias
+            )
+            self._registrar(
+                guardado,
+                usuario,
+                "asignacion",
+                f"Responsable asignado: {responsable.nombre}",
+            )
+            guardado = self._repo.actualizar(guardado)
+
         return self._enriquecer(guardado)
 
     def obtener_por_id(self, hallazgo_id: int) -> HallazgoDetallado:
@@ -496,6 +515,23 @@ class HallazgoService:
             )
         return ejecucion
 
+    def _validar_responsable(
+        self, responsable_id: int, area_id: int
+    ) -> Usuario:
+        """Valida que el usuario sea Responsable de Manufactura del area."""
+        responsable = self._session.get(Usuario, responsable_id)
+        if responsable is None or not responsable.activo:
+            raise ValueError("El responsable no existe o esta inactivo.")
+        if self._rol(responsable) != _ROL_RESPONSABLE:
+            raise ValueError(
+                "El usuario seleccionado no es Responsable de Manufactura."
+            )
+        if area_id not in {a.id for a in responsable.areas}:
+            raise ValueError(
+                "El responsable no pertenece al area del hallazgo."
+            )
+        return responsable
+
     def asignar_responsable(
         self,
         hallazgo_id: int,
@@ -515,22 +551,14 @@ class HallazgoService:
 
         if hallazgo.estado == _ESTADO_CERRADO:
             raise ValueError("No se puede reasignar un hallazgo cerrado.")
-
-        responsable = self._session.get(Usuario, responsable_id)
-        if responsable is None or not responsable.activo:
-            raise ValueError("El responsable no existe o esta inactivo.")
-        if self._rol(responsable) != _ROL_RESPONSABLE:
-            raise ValueError(
-                "El usuario seleccionado no es Responsable de Manufactura."
-            )
         if hallazgo.area_responsable_id is None:
             raise ValueError(
                 "El hallazgo no tiene un area responsable definida."
             )
-        if hallazgo.area_responsable_id not in {a.id for a in responsable.areas}:
-            raise ValueError(
-                "El responsable no pertenece al area del hallazgo."
-            )
+
+        responsable = self._validar_responsable(
+            responsable_id, hallazgo.area_responsable_id
+        )
 
         anterior = hallazgo.responsables[0] if hallazgo.responsables else None
         hallazgo.responsables = [responsable]
@@ -705,18 +733,6 @@ class HallazgoService:
             raise ValueError("Hallazgo no encontrado.")
         if hallazgo.area_responsable_id is None:
             return []
-        filas = self._session.exec(
-            select(Usuario)
-            .join(UsuarioArea, UsuarioArea.usuario_id == Usuario.id)
-            .join(Rol, Rol.id == Usuario.rol_id)
-            .where(
-                UsuarioArea.area_id == hallazgo.area_responsable_id,
-                Rol.nombre == _ROL_RESPONSABLE,
-                Usuario.activo == True,  # noqa: E712
-            )
-            .order_by(Usuario.nombre)
-        ).all()
-        return [
-            ResponsableResumen(id=u.id or 0, nombre=u.nombre, correo=u.correo)
-            for u in filas
-        ]
+        return AreaService(self._session).responsables(
+            hallazgo.area_responsable_id
+        )

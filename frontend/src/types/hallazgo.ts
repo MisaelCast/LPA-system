@@ -64,6 +64,7 @@ export interface ResponsableResumen {
 export interface HallazgoCreate {
   descripcion: string
   area_responsable_id?: number | null
+  responsable_id?: number | null
 }
 
 export interface HallazgoUpdate {

@@ -107,6 +107,7 @@ class EjecucionAuditoriaService:
         self, ejecucion: EjecucionAuditoria
     ) -> EjecucionAuditoria:
         object.__setattr__(ejecucion, "auditoria_nombre", "")
+        object.__setattr__(ejecucion, "area_id", None)
         object.__setattr__(ejecucion, "area_nombre", "")
         object.__setattr__(ejecucion, "celula_numero", None)
         object.__setattr__(ejecucion, "auditor_nombre", "")
@@ -119,6 +120,7 @@ class EjecucionAuditoriaService:
                 ejecucion, "tipo_respuesta", auditoria.tipo_respuesta
             )
             if auditoria.area_id:
+                object.__setattr__(ejecucion, "area_id", auditoria.area_id)
                 from app.models.area import Area
 
                 area = self._session.get(Area, auditoria.area_id)

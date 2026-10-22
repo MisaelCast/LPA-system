@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Auditoria } from '@/types/auditoria'
-import type { Area, Celula } from '@/types/area'
+import type { Celula } from '@/types/area'
 import type { EjecucionAuditoria, CriterioRespuesta } from '@/types/ejecucion'
 import PlanSemanal from '@/components/PlanSemanal.vue'
 import {
@@ -21,9 +21,9 @@ import {
   subirEvidencia,
   listarEvidencias,
   eliminarEvidencia,
+  responsablesDeArea,
 } from '@/services/hallazgo.service'
-import type { Evidencia } from '@/types/hallazgo'
-import { obtenerAreasActivas } from '@/services/area.service'
+import type { Evidencia, ResponsableResumen } from '@/types/hallazgo'
 
 const router = useRouter()
 const route = useRoute()
@@ -37,10 +37,12 @@ const auditorias = ref<Auditoria[]>([])
 const auditoriaSeleccionada = ref<Auditoria | null>(null)
 const celulas = ref<Celula[]>([])
 const ejecucion = ref<EjecucionAuditoria | null>(null)
-const areas = ref<Area[]>([])
+const responsables = ref<ResponsableResumen[]>([])
+const responsableId = ref<number | null>(null)
+const responsablesCargando = ref(false)
+const responsablesError = ref('')
 
 const hallazgosInputs = ref<Record<number, string>>({})
-const hallazgosAreas = ref<Record<number, number | null>>({})
 const hallazgosGuardando = ref<Record<number, boolean>>({})
 const hallazgosError = ref<Record<number, string>>({})
 const hallazgosFotos = ref<Record<number, Evidencia[]>>({})
@@ -137,7 +139,6 @@ function limpiarMensajes() {
 }
 
 onMounted(async () => {
-  cargarAreas()
   const idParam = route.query.id
   if (idParam) {
     const id = Number(idParam)
@@ -153,13 +154,35 @@ onMounted(async () => {
   }
 })
 
-async function cargarAreas() {
+async function cargarResponsables(areaId: number | null): Promise<void> {
+  responsablesError.value = ''
+  if (!areaId) {
+    responsables.value = []
+    responsableId.value = null
+    responsablesCargando.value = false
+    return
+  }
+  responsablesCargando.value = true
   try {
-    areas.value = await obtenerAreasActivas()
+    const lista = await responsablesDeArea(areaId)
+    responsables.value = lista
+    responsableId.value =
+      lista.length === 1 ? (lista[0]?.id ?? null) : null
   } catch {
-    areas.value = []
+    responsables.value = []
+    responsableId.value = null
+    responsablesError.value = 'No se pudieron cargar los responsables del área.'
+  } finally {
+    responsablesCargando.value = false
   }
 }
+
+watch(
+  () => ejecucion.value?.area_id ?? null,
+  (areaId) => {
+    void cargarResponsables(areaId)
+  },
+)
 
 async function cargarEjecucionExistente(id: number) {
   limpiarMensajes()
@@ -342,7 +365,6 @@ async function quitarHallazgo(criterio: CriterioRespuesta) {
     criterio.hallazgo_id = null
     criterio.hallazgo_descripcion = null
     delete hallazgosInputs.value[criterio.id]
-    delete hallazgosAreas.value[criterio.id]
     delete hallazgosError.value[criterio.id]
     limpiarFotos(criterio.id)
   } catch (err) {
@@ -374,9 +396,14 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     hallazgosError.value[criterio.id] = 'La descripción es obligatoria.'
     return
   }
-  const areaId = hallazgosAreas.value[criterio.id] ?? null
-  if (criterio.hallazgo_id === null && !areaId && !esCumplimiento()) {
-    hallazgosError.value[criterio.id] = 'El área responsable es obligatoria.'
+  if (
+    criterio.hallazgo_id === null &&
+    !esCumplimiento() &&
+    responsables.value.length > 0 &&
+    responsableId.value === null
+  ) {
+    hallazgosError.value[criterio.id] =
+      'Selecciona el responsable que atenderá el hallazgo.'
     return
   }
   hallazgosGuardando.value[criterio.id] = true
@@ -400,7 +427,8 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     } else {
       const creado = await crearHallazgo(crit.respuesta_id, {
         descripcion,
-        area_responsable_id: areaId,
+        area_responsable_id: ejecucion.value?.area_id ?? null,
+        responsable_id: responsableId.value,
       })
       crit.hallazgo_id = creado.id
       crit.hallazgo_descripcion = creado.descripcion
@@ -661,19 +689,36 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                 <label>
                   <strong>{{ etiquetaHallazgo(fila.criterio.respuesta_valor) }}</strong>
                 </label>
-                <label v-if="fila.criterio.hallazgo_id === null && !esCumplimiento()" class="hallazgo-area">
-                  <span>Área responsable</span>
+                <div
+                  v-if="fila.criterio.hallazgo_id === null && !esCumplimiento()"
+                  class="hallazgo-area"
+                >
+                  <span>Responsable</span>
+                  <p v-if="responsablesCargando" class="hallazgo-aviso">
+                    Buscando responsables del área…
+                  </p>
+                  <p v-else-if="responsablesError" class="hallazgo-aviso err">
+                    {{ responsablesError }}
+                  </p>
+                  <p v-else-if="responsables.length === 0" class="hallazgo-aviso">
+                    Esta área no tiene responsables de manufactura asignados.
+                  </p>
+                  <div v-else-if="responsables.length === 1" class="hallazgo-responsable">
+                    <strong>{{ responsables[0]?.nombre }}</strong>
+                    <small>{{ responsables[0]?.correo }}</small>
+                  </div>
                   <select
-                    v-model.number="hallazgosAreas[fila.criterio.id]"
+                    v-else
+                    v-model.number="responsableId"
                     class="input"
                     :disabled="soloLectura"
                   >
-                    <option :value="null" disabled>Seleccione el área responsable</option>
-                    <option v-for="a in areas" :key="a.id" :value="a.id">
-                      {{ a.nombre }}
+                    <option :value="null" disabled>Seleccione el responsable</option>
+                    <option v-for="r in responsables" :key="r.id" :value="r.id">
+                      {{ r.nombre }}
                     </option>
                   </select>
-                </label>
+                </div>
                 <textarea
                   v-model="hallazgosInputs[fila.criterio.id]"
                   class="input hallazgo-input"
@@ -1198,6 +1243,36 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 .hallazgo-area select {
   width: 100%;
   box-sizing: border-box;
+}
+
+.hallazgo-aviso {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--c-ink-3, #64748b);
+}
+
+.hallazgo-aviso.err {
+  color: var(--c-danger, #dc2626);
+}
+
+.hallazgo-responsable {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--c-line-2, #d5dae3);
+  border-radius: 6px;
+  background: var(--c-surface-2, #f8fafc);
+}
+
+.hallazgo-responsable strong {
+  font-size: 0.9rem;
+  color: var(--c-ink, #0f172a);
+}
+
+.hallazgo-responsable small {
+  font-size: 0.75rem;
+  color: var(--c-ink-3, #64748b);
 }
 
 .hallazgo-input {

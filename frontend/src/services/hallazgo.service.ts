@@ -103,6 +103,14 @@ export function listarResponsables(
     .then((res) => res.data)
 }
 
+export function responsablesDeArea(
+  areaId: number,
+): Promise<ResponsableResumen[]> {
+  return api
+    .get<ResponsableResumen[]>(`/areas/${areaId}/responsables`)
+    .then((res) => res.data)
+}
+
 export function asignarResponsable(
   hallazgoId: number,
   datos: AsignarResponsableRequest,

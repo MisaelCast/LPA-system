@@ -671,6 +671,189 @@ class TestHallazgoService:
                     )
 
 
+    def _preparar_creacion(self, responsable, area):
+        """Configura los lookups de ``crear`` incluyendo el responsable."""
+        respuesta = _respuesta(valor="A")
+        ejecucion = _ejecucion()
+        criterio = _criterio()
+        auditoria = _auditoria()
+        self._configurar_lookups(
+            respuesta, ejecucion, criterio, auditoria, area
+        )
+
+        base = self.mock_session.get.side_effect
+
+        def get_side(cls, _id):
+            if getattr(cls, "__name__", "") == "Usuario":
+                return responsable
+            return base(cls, _id)
+
+        self.mock_session.get.side_effect = get_side
+        return respuesta
+
+    def test_crear_asigna_responsable_del_area(self):
+        """Al enviar responsable_id el hallazgo nace asignado y con fecha límite."""
+        area = _area()
+        responsable = _usuario(
+            id_=9, rol_nombre="Responsable de Manufactura"
+        )
+        responsable.nombre = "Responsable Prueba"
+        responsable.areas = [area]
+        respuesta = self._preparar_creacion(responsable, area)
+
+        creado = Hallazgo(
+            id=1,
+            descripcion="Detalle",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=respuesta.id,
+        )
+
+        with patch.object(
+            type(self.service._respuesta_repo),
+            "obtener_por_id",
+            return_value=respuesta,
+        ):
+            with patch.object(
+                type(self.service._repo),
+                "obtener_por_respuesta",
+                return_value=None,
+            ):
+                with patch.object(
+                    type(self.service._repo),
+                    "crear",
+                    return_value=creado,
+                ):
+                    with patch.object(
+                        type(self.service._repo),
+                        "actualizar",
+                        side_effect=lambda h: h,
+                    ):
+                        resultado = self.service.crear(
+                            HallazgoCreate(
+                                descripcion="Detalle",
+                                respuesta_id=respuesta.id,
+                                area_responsable_id=1,
+                                responsable_id=9,
+                            ),
+                            self.usuario,
+                        )
+
+        assert resultado.responsable_id == 9
+        assert resultado.responsable_nombre == "Responsable Prueba"
+        assert resultado.fecha_limite is not None
+        self.mock_session.add.assert_called()
+
+    def test_crear_rechaza_responsable_de_otra_area(self):
+        """No permite asignar un responsable que no pertenece al área."""
+        area = _area()
+        responsable = _usuario(
+            id_=9, rol_nombre="Responsable de Manufactura"
+        )
+        responsable.nombre = "Responsable Ajeno"
+        responsable.areas = [_area(id_=99)]
+        respuesta = self._preparar_creacion(responsable, area)
+
+        with patch.object(
+            type(self.service._respuesta_repo),
+            "obtener_por_id",
+            return_value=respuesta,
+        ):
+            with patch.object(
+                type(self.service._repo),
+                "obtener_por_respuesta",
+                return_value=None,
+            ):
+                with patch.object(
+                    type(self.service._repo), "crear"
+                ) as crear:
+                    with pytest.raises(
+                        ValueError, match="no pertenece al area"
+                    ):
+                        self.service.crear(
+                            HallazgoCreate(
+                                descripcion="Detalle",
+                                respuesta_id=respuesta.id,
+                                area_responsable_id=1,
+                                responsable_id=9,
+                            ),
+                            self.usuario,
+                        )
+
+        crear.assert_not_called()
+
+    def test_crear_sin_responsable_lo_deja_sin_asignar(self):
+        """Sin responsable_id conserva el comportamiento previo (sin responsable)."""
+        area = _area()
+        respuesta = self._preparar_creacion(None, area)
+
+        creado = Hallazgo(
+            id=1,
+            descripcion="Detalle",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=respuesta.id,
+        )
+
+        with patch.object(
+            type(self.service._respuesta_repo),
+            "obtener_por_id",
+            return_value=respuesta,
+        ):
+            with patch.object(
+                type(self.service._repo),
+                "obtener_por_respuesta",
+                return_value=None,
+            ):
+                with patch.object(
+                    type(self.service._repo),
+                    "crear",
+                    return_value=creado,
+                ):
+                    resultado = self.service.crear(
+                        HallazgoCreate(
+                            descripcion="Detalle",
+                            respuesta_id=respuesta.id,
+                            area_responsable_id=1,
+                        ),
+                        self.usuario,
+                    )
+
+        assert resultado.responsable_id is None
+        assert resultado.fecha_limite is None
+
+
+class TestResponsablesAreaEndpoint:
+    """Pruebas HTTP del listado de responsables de un área."""
+
+    @staticmethod
+    def _headers(client) -> dict:
+        response = client.post(
+            "/auth/login",
+            json={"correo": "admin@lpa.com", "contrasena": "Admin123*"},
+        )
+        assert response.status_code == 200, response.text
+        token = response.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_lista_responsables_del_area(self, client):
+        headers = self._headers(client)
+        response = client.get("/areas/1/responsables", headers=headers)
+        assert response.status_code == 200, response.text
+        items = response.json()
+        assert isinstance(items, list)
+        for item in items:
+            assert set(item) == {"id", "nombre", "correo"}
+
+    def test_area_inexistente_devuelve_lista_vacia(self, client):
+        headers = self._headers(client)
+        response = client.get("/areas/999999/responsables", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_requiere_autenticacion(self, client):
+        response = client.get("/areas/1/responsables")
+        assert response.status_code in (401, 403)
+
+
 class TestHallazgoEndpoint:
     """Pruebas del endpoint HTTP de hallazgos (smoke test del schema)."""
 

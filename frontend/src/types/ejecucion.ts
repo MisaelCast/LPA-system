@@ -24,6 +24,7 @@ export interface EjecucionAuditoria {
   usuario_id: number
   celula_id: number | null
   auditoria_nombre: string
+  area_id: number | null
   area_nombre: string | null
   celula_numero: number | null
   auditor_nombre: string
@@ -80,7 +81,6 @@ export interface EjecucionAuditoriaListItem {
 }
 
 export interface EjecucionAuditoriaDetalle extends EjecucionAuditoria {
-  area_id: number | null
   resumen: EjecucionResumen
 }
 
