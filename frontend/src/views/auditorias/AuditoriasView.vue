@@ -3,18 +3,15 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAuditoriasStore } from '@/stores/auditorias'
 import { useCriteriosStore } from '@/stores/criterios'
 import { useAuthStore } from '@/stores/auth'
-import { useAreasStore } from '@/stores/areas'
-import { useCapasStore } from '@/stores/capas'
-import { useFrecuenciasStore } from '@/stores/frecuencias'
-import type { Auditoria } from '@/types/auditoria'
+import { obtenerPermisosGestion } from '@/services/auditoria.service'
+import type { Auditoria, PermisosGestionAuditorias } from '@/types/auditoria'
 import type { Criterio } from '@/types/criterio'
 
 const auditoriaStore = useAuditoriasStore()
 const criterioStore = useCriteriosStore()
 const authStore = useAuthStore()
-const areasStore = useAreasStore()
-const capasStore = useCapasStore()
-const frecuenciasStore = useFrecuenciasStore()
+
+const permisos = ref<PermisosGestionAuditorias | null>(null)
 
 const busqueda = ref('')
 const auditoriasExpandidas = ref<Set<number>>(new Set())
@@ -50,9 +47,13 @@ let toastId = 0
 onMounted(async () => {
   await Promise.all([
     auditoriaStore.cargarAuditorias(),
-    areasStore.cargarAreas(),
-    capasStore.cargarCapas(),
-    frecuenciasStore.cargarFrecuencias(),
+    obtenerPermisosGestion()
+      .then((p) => {
+        permisos.value = p
+      })
+      .catch(() => {
+        permisos.value = null
+      }),
   ])
   if (auditoriaStore.auditorias.length > 0) {
     await criterioStore.cargarTodosLosCriterios(
@@ -60,6 +61,28 @@ onMounted(async () => {
     )
   }
 })
+
+const puedeGestionar = computed(() => permisos.value?.puede_gestionar ?? false)
+
+const opcionesCapa = computed(() => permisos.value?.capas ?? [])
+const opcionesArea = computed(() => permisos.value?.areas ?? [])
+const opcionesFrecuencia = computed(() => permisos.value?.frecuencias ?? [])
+
+/** Un Supervisor (no Gerente/Admin) debe elegir siempre un área propia. */
+const areaRequerida = computed(
+  () => permisos.value != null && permisos.value.area_ids != null,
+)
+
+function puedeGestionarAuditoria(a: Auditoria): boolean {
+  const p = permisos.value
+  if (!p?.puede_gestionar) return false
+  if (authStore.isAdmin) return true
+  if (p.capa_ids != null && !p.capa_ids.includes(a.capa_id)) return false
+  if (p.area_ids != null) {
+    return a.area_id != null && p.area_ids.includes(a.area_id)
+  }
+  return true
+}
 
 const auditoriasFiltradas = computed(() => {
   const q = busqueda.value.trim().toLowerCase()
@@ -145,6 +168,9 @@ function abrirModalCrear() {
   formAreaId.value = null
   formCapaId.value = null
   formFrecuenciaId.value = null
+  if (areaRequerida.value && opcionesArea.value.length === 1) {
+    formAreaId.value = opcionesArea.value[0]?.id ?? null
+  }
   formError.value = ''
   modalCrearAbierto.value = true
 }
@@ -154,10 +180,21 @@ function cerrarModalCrear() {
   modalCrearAbierto.value = false
 }
 
+function validarFormulario(): string | null {
+  if (!formNombre.value.trim() || !formCapaId.value || !formFrecuenciaId.value) {
+    return 'Complete todos los campos obligatorios.'
+  }
+  if (areaRequerida.value && !formAreaId.value) {
+    return 'Debe seleccionar un área de su cargo.'
+  }
+  return null
+}
+
 async function confirmarCrear() {
   formError.value = ''
-  if (!formNombre.value.trim() || !formCapaId.value || !formFrecuenciaId.value) {
-    formError.value = 'Complete todos los campos obligatorios.'
+  const errorValidacion = validarFormulario()
+  if (errorValidacion) {
+    formError.value = errorValidacion
     return
   }
   formGuardando.value = true
@@ -167,8 +204,8 @@ async function confirmarCrear() {
       descripcion: formDescripcion.value.trim() || undefined,
       activa: true,
       area_id: formAreaId.value ?? null,
-      capa_id: formCapaId.value,
-      frecuencia_id: formFrecuenciaId.value,
+      capa_id: formCapaId.value ?? 0,
+      frecuencia_id: formFrecuenciaId.value ?? 0,
     })
     mostrarToast('ok', `Auditoría "${formNombre.value.trim()}" creada.`)
     modalCrearAbierto.value = false
@@ -200,8 +237,9 @@ function cerrarModalEditar() {
 async function confirmarEditar() {
   if (!auditoriaEditando.value) return
   formError.value = ''
-  if (!formNombre.value.trim() || !formCapaId.value || !formFrecuenciaId.value) {
-    formError.value = 'Complete todos los campos obligatorios.'
+  const errorValidacion = validarFormulario()
+  if (errorValidacion) {
+    formError.value = errorValidacion
     return
   }
   formGuardando.value = true
@@ -321,7 +359,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         <p class="subtitle">Plantillas y criterios de las auditorías LPA.</p>
       </div>
       <button
-        v-if="authStore.isAdmin"
+        v-if="puedeGestionar"
         class="btn-primary"
         @click="abrirModalCrear"
       >
@@ -387,7 +425,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <h2>Aún no hay auditorías</h2>
       <p>Comienza creando la primera auditoría.</p>
       <button
-        v-if="authStore.isAdmin"
+        v-if="puedeGestionar"
         class="btn-primary"
         @click="abrirModalCrear"
       >
@@ -448,7 +486,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                   {{ a.activa ? 'Activa' : 'Inactiva' }}
                 </span>
               </div>
-              <div v-if="authStore.isAdmin" class="auditoria-card-actions" @click.stop>
+              <div v-if="puedeGestionarAuditoria(a)" class="auditoria-card-actions" @click.stop>
                 <button
                   class="icon-btn"
                   title="Editar auditoría"
@@ -517,7 +555,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                   <template v-else>
                     <span class="criterio-orden">{{ c.orden }}</span>
                     <span class="criterio-desc">{{ c.descripcion }}</span>
-                    <div v-if="authStore.isAdmin" class="criterio-actions">
+                    <div v-if="puedeGestionarAuditoria(a)" class="criterio-actions">
                       <button class="icon-btn" title="Editar criterio" aria-label="Editar criterio" @click="iniciarEdicionCriterio(c)">
                         <svg viewBox="0 0 16 16" aria-hidden="true">
                           <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
@@ -537,7 +575,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                 </li>
               </ul>
 
-              <div v-if="authStore.isAdmin" class="criterio-add-bar">
+              <div v-if="puedeGestionarAuditoria(a)" class="criterio-add-bar">
                 <input v-model.number="nuevaCriterioOrden" type="number" min="1" class="cell-input" title="Orden" />
                 <input v-model="nuevaCriterioDesc" placeholder="Nuevo criterio…" class="criterio-input" @keyup.enter="handleCrearCriterio(a.id)" />
                 <button class="btn-primary btn-small" :disabled="criterioAgregando" @click="handleCrearCriterio(a.id)">
@@ -580,22 +618,22 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           <label class="field">
             <span>Área</span>
             <select v-model.number="formAreaId">
-              <option :value="null">Sin área</option>
-              <option v-for="ar in areasStore.areas" :key="ar.id" :value="ar.id">{{ ar.nombre }}</option>
+              <option v-if="!areaRequerida" :value="null">Sin área</option>
+              <option v-for="ar in opcionesArea" :key="ar.id" :value="ar.id">{{ ar.nombre }}</option>
             </select>
           </label>
           <label class="field">
             <span>Capa</span>
             <select v-model.number="formCapaId">
               <option :value="null" disabled>Seleccione</option>
-              <option v-for="c in capasStore.capas" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+              <option v-for="c in opcionesCapa" :key="c.id" :value="c.id">{{ c.nombre }}</option>
             </select>
           </label>
           <label class="field">
             <span>Frecuencia</span>
             <select v-model.number="formFrecuenciaId">
               <option :value="null" disabled>Seleccione</option>
-              <option v-for="f in frecuenciasStore.frecuencias" :key="f.id" :value="f.id">{{ f.nombre }}</option>
+              <option v-for="f in opcionesFrecuencia" :key="f.id" :value="f.id">{{ f.nombre }}</option>
             </select>
           </label>
           <p v-if="formError" class="form-error">{{ formError }}</p>
@@ -638,22 +676,22 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           <label class="field">
             <span>Área</span>
             <select v-model.number="formAreaId">
-              <option :value="null">Sin área</option>
-              <option v-for="ar in areasStore.areas" :key="ar.id" :value="ar.id">{{ ar.nombre }}</option>
+              <option v-if="!areaRequerida" :value="null">Sin área</option>
+              <option v-for="ar in opcionesArea" :key="ar.id" :value="ar.id">{{ ar.nombre }}</option>
             </select>
           </label>
           <label class="field">
             <span>Capa</span>
             <select v-model.number="formCapaId">
               <option :value="null" disabled>Seleccione</option>
-              <option v-for="c in capasStore.capas" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+              <option v-for="c in opcionesCapa" :key="c.id" :value="c.id">{{ c.nombre }}</option>
             </select>
           </label>
           <label class="field">
             <span>Frecuencia</span>
             <select v-model.number="formFrecuenciaId">
               <option :value="null" disabled>Seleccione</option>
-              <option v-for="f in frecuenciasStore.frecuencias" :key="f.id" :value="f.id">{{ f.nombre }}</option>
+              <option v-for="f in opcionesFrecuencia" :key="f.id" :value="f.id">{{ f.nombre }}</option>
             </select>
           </label>
           <p v-if="formError" class="form-error">{{ formError }}</p>

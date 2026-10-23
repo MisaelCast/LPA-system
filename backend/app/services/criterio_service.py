@@ -12,6 +12,29 @@ class CriterioService:
 
     def __init__(self, session: Session) -> None:
         self._repo = CriterioRepository(session)
+        self._session = session
+
+    def _validar_auditoria_gestionable(
+        self, auditoria_id: int, usuario
+    ) -> None:
+        """Valida que el usuario pueda gestionar la auditoría de origen.
+
+        Un Supervisor solo gestiona criterios de las auditorías de sus
+        capas/áreas; un Gerente, de su capa y las inferiores.
+        """
+        from app.models.auditoria import Auditoria
+        from app.services.auditoria_service import (
+            _puede_gestionar_auditoria,
+        )
+
+        auditoria = self._session.get(Auditoria, auditoria_id)
+        if auditoria is None:
+            raise ValueError("La auditoria especificada no existe.")
+        if not _puede_gestionar_auditoria(self._session, usuario, auditoria):
+            raise ValueError(
+                "No tiene permisos para gestionar los criterios de esta "
+                "auditoría."
+            )
 
     def listar_por_auditoria(self, auditoria_id: int) -> list[Criterio]:
         """Obtiene los criterios de una auditoria ordenados."""
@@ -28,20 +51,19 @@ class CriterioService:
             raise ValueError("Criterio no encontrado.")
         return criterio
 
-    def crear(self, auditoria_id: int, datos: CriterioCreate) -> Criterio:
+    def crear(
+        self, auditoria_id: int, datos: CriterioCreate, usuario
+    ) -> Criterio:
         """Crea un criterio para una auditoria.
 
         Si el orden ya esta ocupado, se asigna automaticamente
         el maximo orden + 1 para evitar duplicados.
 
         Raises:
-            ValueError: Si la auditoria no existe.
+            ValueError: Si la auditoria no existe o el usuario no tiene
+                        permisos.
         """
-        from app.models.auditoria import Auditoria
-
-        auditoria = self._repo._session.get(Auditoria, auditoria_id)
-        if auditoria is None:
-            raise ValueError("La auditoria especificada no existe.")
+        self._validar_auditoria_gestionable(auditoria_id, usuario)
 
         orden = datos.orden
         existente = self._repo.obtener_por_auditoria_y_orden(
@@ -59,18 +81,23 @@ class CriterioService:
 
         return self._repo.crear(criterio)
 
-    def actualizar(self, criterio_id: int, datos: CriterioUpdate) -> Criterio:
+    def actualizar(
+        self, criterio_id: int, datos: CriterioUpdate, usuario
+    ) -> Criterio:
         """Actualiza un criterio.
 
         Si se cambia el orden a uno ya ocupado por otro criterio
         de la misma auditoria, se intercambian (swap).
 
         Raises:
-            ValueError: Si el criterio no existe.
+            ValueError: Si el criterio no existe o el usuario no tiene
+                        permisos.
         """
         criterio = self._repo.obtener_por_id(criterio_id)
         if criterio is None:
             raise ValueError("Criterio no encontrado.")
+
+        self._validar_auditoria_gestionable(criterio.auditoria_id, usuario)
 
         if datos.descripcion is not None:
             criterio.descripcion = datos.descripcion
@@ -92,15 +119,20 @@ class CriterioService:
 
         return self._repo.actualizar(criterio)
 
-    def cambiar_estado(self, criterio_id: int, activo: bool) -> Criterio:
+    def cambiar_estado(
+        self, criterio_id: int, activo: bool, usuario
+    ) -> Criterio:
         """Activa o desactiva un criterio.
 
         Raises:
-            ValueError: Si el criterio no existe.
+            ValueError: Si el criterio no existe o el usuario no tiene
+                        permisos.
         """
         criterio = self._repo.obtener_por_id(criterio_id)
         if criterio is None:
             raise ValueError("Criterio no encontrado.")
+
+        self._validar_auditoria_gestionable(criterio.auditoria_id, usuario)
 
         if criterio.activo == activo:
             return criterio

@@ -80,7 +80,7 @@ const grupos = computed(() => [
       { to: '/usuarios', label: 'Usuarios', icon: 'users', visible: authStore.isAdmin },
       { to: '/areas', label: 'Áreas', icon: 'areas', visible: authStore.isAdmin },
       { to: '/capas', label: 'Capas', icon: 'layers', visible: authStore.isAdmin },
-      { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin },
+      { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin || authStore.isSupervisor || authStore.isGerente },
     ].filter((e) => e.visible),
   },
 ])

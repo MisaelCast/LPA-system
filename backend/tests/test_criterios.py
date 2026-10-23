@@ -11,12 +11,20 @@ from app.services.criterio_service import CriterioService
 from app.repositories.criterio_repository import CriterioRepository
 
 
+def _usuario_admin() -> MagicMock:
+    usuario = MagicMock()
+    usuario.rol.nombre = "Administrador"
+    usuario.areas = []
+    return usuario
+
+
 class TestCriterioService:
     """Pruebas unitarias para CriterioService."""
 
     def setup_method(self):
         self.mock_session = MagicMock(spec=Session)
         self.service = CriterioService(self.mock_session)
+        self.admin = _usuario_admin()
 
     def test_crear_criterio_exitoso(self):
         """Verifica que se cree un criterio correctamente."""
@@ -39,7 +47,7 @@ class TestCriterioService:
                     auditoria_id=1,
                 ),
             ):
-                resultado = self.service.crear(1, datos)
+                resultado = self.service.crear(1, datos, self.admin)
 
         assert resultado.descripcion == "Verificar proceso"
         assert resultado.orden == 1
@@ -62,7 +70,7 @@ class TestCriterioService:
                         id=2, descripcion="Test", orden=6, auditoria_id=1
                     ),
                 ):
-                    resultado = self.service.crear(1, datos)
+                    resultado = self.service.crear(1, datos, self.admin)
 
         assert resultado.orden == 6
 
@@ -72,7 +80,7 @@ class TestCriterioService:
         self.mock_session.get.return_value = None
 
         with pytest.raises(ValueError, match="La auditoria especificada no existe"):
-            self.service.crear(999, datos)
+            self.service.crear(999, datos, self.admin)
 
     def test_obtener_por_id_existe(self):
         """Verifica que se obtenga un criterio por ID."""
@@ -98,7 +106,7 @@ class TestCriterioService:
             with patch.object(
                 CriterioRepository, "actualizar", return_value=criterio
             ) as mock_actualizar:
-                self.service.actualizar(1, datos)
+                self.service.actualizar(1, datos, self.admin)
                 mock_actualizar.assert_called_once()
 
     def test_actualizar_criterio_swap_orden(self):
@@ -116,7 +124,7 @@ class TestCriterioService:
                 with patch.object(
                     CriterioRepository, "actualizar", return_value=criterio_a
                 ) as mock_actualizar:
-                    self.service.actualizar(1, datos)
+                    self.service.actualizar(1, datos, self.admin)
                     assert mock_actualizar.call_count >= 1
 
     def test_cambiar_estado(self):
@@ -127,7 +135,7 @@ class TestCriterioService:
             with patch.object(
                 CriterioRepository, "actualizar", return_value=criterio
             ) as mock_actualizar:
-                self.service.cambiar_estado(1, False)
+                self.service.cambiar_estado(1, False, self.admin)
                 mock_actualizar.assert_called_once()
 
     def test_cambiar_estado_mismo_valor(self):
@@ -136,7 +144,7 @@ class TestCriterioService:
 
         with patch.object(CriterioRepository, "obtener_por_id", return_value=criterio):
             with patch.object(CriterioRepository, "actualizar") as mock_actualizar:
-                self.service.cambiar_estado(1, False)
+                self.service.cambiar_estado(1, False, self.admin)
                 mock_actualizar.assert_not_called()
 
     def test_listar_por_auditoria(self):
@@ -152,3 +160,46 @@ class TestCriterioService:
         assert len(resultado) == 2
         assert resultado[0].orden == 1
         assert resultado[1].orden == 2
+
+
+class TestCriteriosPermisos:
+    """Pruebas de autorización de criterios por auditoría madre."""
+
+    def setup_method(self):
+        self.mock_session = MagicMock(spec=Session)
+        self.service = CriterioService(self.mock_session)
+
+    def _usuario(self, rol: str) -> MagicMock:
+        usuario = MagicMock()
+        usuario.rol.nombre = rol
+        usuario.areas = []
+        return usuario
+
+    def test_supervisor_no_gestiona_criterios_de_auditoria_ajena(self):
+        """Un Supervisor no puede crear criterios en auditorías de otras áreas."""
+        from app.models.auditoria import Auditoria
+        from app.models.capa import Capa
+
+        auditoria = Auditoria(
+            id=1, nombre="Ajena", activa=True, capa_id=1, frecuencia_id=1,
+            area_id=99,
+        )
+        supervisor = self._usuario("Supervisor")
+        supervisor.areas = []  # sin áreas asignadas
+        self.mock_session.get.return_value = auditoria
+        self.mock_session.exec.return_value.all.return_value = [
+            Capa(id=1, nombre="Auditor", activa=True)
+        ]
+        datos = CriterioCreate(descripcion="Test", orden=1, activo=True)
+
+        with pytest.raises(ValueError, match="No tiene permisos"):
+            self.service.crear(1, datos, supervisor)
+
+    def test_criterio_auditoria_inexistente_para_supervisor(self):
+        """Falla si la auditoría no existe."""
+        self.mock_session.get.return_value = None
+        datos = CriterioCreate(descripcion="Test", orden=1, activo=True)
+        supervisor = self._usuario("Supervisor")
+
+        with pytest.raises(ValueError, match="no existe"):
+            self.service.crear(999, datos, supervisor)

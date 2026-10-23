@@ -31,3 +31,19 @@ export interface AuditoriaUpdate {
   frecuencia_id?: number
   area_id?: number
 }
+
+export interface OpcionCatalogo {
+  id: number
+  nombre: string
+}
+
+export interface PermisosGestionAuditorias {
+  puede_gestionar: boolean
+  /** IDs de capa permitidos; `null` = sin restricción. */
+  capa_ids: number[] | null
+  /** IDs de área permitidos; `null` = sin restricción. */
+  area_ids: number[] | null
+  capas: OpcionCatalogo[]
+  areas: OpcionCatalogo[]
+  frecuencias: OpcionCatalogo[]
+}

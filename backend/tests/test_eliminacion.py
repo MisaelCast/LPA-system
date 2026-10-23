@@ -104,6 +104,9 @@ class TestEliminarAuditoria:
     def setup_method(self):
         self.mock_session = _session_con_conteo(0)
         self.service = AuditoriaService(self.mock_session)
+        self.admin = MagicMock()
+        self.admin.rol.nombre = "Administrador"
+        self.admin.areas = []
 
     def test_eliminar_auditoria_exitoso_sin_criterios(self):
         auditoria = Auditoria(
@@ -115,13 +118,13 @@ class TestEliminarAuditoria:
             AuditoriaRepository, "obtener_por_id", return_value=auditoria
         ):
             with patch.object(AuditoriaRepository, "eliminar") as mock_eliminar:
-                self.service.eliminar(1)
+                self.service.eliminar(1, self.admin)
         mock_eliminar.assert_called_once_with(auditoria)
 
     def test_eliminar_auditoria_inexistente(self):
         with patch.object(AuditoriaRepository, "obtener_por_id", return_value=None):
             with pytest.raises(ValueError, match="Auditoria no encontrada"):
-                self.service.eliminar(999)
+                self.service.eliminar(999, self.admin)
 
     def test_eliminar_auditoria_con_ejecuciones(self):
         auditoria = Auditoria(
@@ -132,4 +135,4 @@ class TestEliminarAuditoria:
             AuditoriaRepository, "obtener_por_id", return_value=auditoria
         ):
             with pytest.raises(ValueError, match="ejecuciones realizadas asociadas"):
-                self.service.eliminar(1)
+                self.service.eliminar(1, self.admin)

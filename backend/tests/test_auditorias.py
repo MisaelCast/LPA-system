@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from sqlmodel import Session
 
+from app.models.area import Area
 from app.models.auditoria import Auditoria
 from app.models.capa import Capa
 from app.models.frecuencia import Frecuencia
@@ -15,12 +16,41 @@ from app.services.capa_service import CapaService
 from app.services.frecuencia_service import FrecuenciaService
 
 
+def _usuario(rol: str, areas: list[Area] | None = None) -> MagicMock:
+    """Usuario de prueba con rol y áreas asignadas."""
+    usuario = MagicMock()
+    usuario.rol.nombre = rol
+    usuario.areas = areas or []
+    return usuario
+
+
+def _usuario_admin() -> MagicMock:
+    return _usuario("Administrador")
+
+
+def _usuario_supervisor(areas: list[Area] | None = None) -> MagicMock:
+    return _usuario("Supervisor", areas)
+
+
+def _usuario_gerente() -> MagicMock:
+    return _usuario("Gerente")
+
+
+def _capas_base() -> list[Capa]:
+    return [
+        Capa(id=1, nombre="Auditor", activa=True),
+        Capa(id=2, nombre="Supervisor", activa=True),
+        Capa(id=3, nombre="Gerente", activa=True),
+    ]
+
+
 class TestAuditoriaService:
     """Pruebas unitarias para AuditoriaService."""
 
     def setup_method(self):
         self.mock_session = MagicMock(spec=Session)
         self.service = AuditoriaService(self.mock_session)
+        self.admin = _usuario_admin()
 
     def _mock_fk_get(self):
         """Mock de session.get para enriquecer_read."""
@@ -57,7 +87,7 @@ class TestAuditoriaService:
                         "crear",
                         return_value=Auditoria(id=1, **datos.model_dump()),
                     ):
-                        resultado = self.service.crear(datos)
+                        resultado = self.service.crear(datos, self.admin)
 
         assert resultado.nombre == "Auditoria Proceso"
         assert resultado.capa_id == 1
@@ -78,7 +108,7 @@ class TestAuditoriaService:
             ),
         ):
             with pytest.raises(ValueError, match="Ya existe una auditoria"):
-                self.service.crear(datos)
+                self.service.crear(datos, self.admin)
 
     def test_crear_auditoria_capa_inexistente(self):
         """Verifica que falle si la capa no existe."""
@@ -93,7 +123,7 @@ class TestAuditoriaService:
                 side_effect=ValueError("Capa no encontrada."),
             ):
                 with pytest.raises(ValueError, match="La capa especificada no existe"):
-                    self.service.crear(datos)
+                    self.service.crear(datos, self.admin)
 
     def test_obtener_por_id_existe(self):
         """Verifica que se obtenga una auditoria por ID."""
@@ -138,7 +168,7 @@ class TestAuditoriaService:
                 with patch.object(
                     AuditoriaRepository, "actualizar", return_value=auditoria
                 ) as mock_actualizar:
-                    self.service.actualizar(1, datos)
+                    self.service.actualizar(1, datos, self.admin)
                     mock_actualizar.assert_called_once()
 
     def test_actualizar_nombre_duplicado(self):
@@ -168,7 +198,7 @@ class TestAuditoriaService:
                     ValueError, match="Ya existe una auditoria"
                 ):
                     self.service.actualizar(
-                        1, AuditoriaUpdate(nombre="EnUso")
+                        1, AuditoriaUpdate(nombre="EnUso"), self.admin
                     )
 
     def test_cambiar_estado(self):
@@ -186,7 +216,7 @@ class TestAuditoriaService:
             with patch.object(
                 AuditoriaRepository, "actualizar", return_value=auditoria
             ) as mock_actualizar:
-                self.service.cambiar_estado(1, False)
+                self.service.cambiar_estado(1, False, self.admin)
                 mock_actualizar.assert_called_once()
 
     def test_cambiar_estado_mismo_valor(self):
@@ -202,11 +232,11 @@ class TestAuditoriaService:
 
         with patch.object(AuditoriaRepository, "obtener_por_id", return_value=auditoria):
             with patch.object(AuditoriaRepository, "actualizar") as mock_actualizar:
-                self.service.cambiar_estado(1, True)
+                self.service.cambiar_estado(1, True, self.admin)
                 mock_actualizar.assert_not_called()
 
     def test_listar_auditorias(self):
-        """Verifica que se listen las auditorias."""
+        """Verifica que se listen las auditorias (Administrador: todas)."""
         auditorias = [
             Auditoria(
                 id=1,
@@ -226,6 +256,338 @@ class TestAuditoriaService:
         self._mock_fk_get()
 
         with patch.object(AuditoriaRepository, "listar", return_value=auditorias):
-            resultado = self.service.listar()
+            resultado = self.service.listar(self.admin)
 
         assert len(resultado) == 2
+
+
+class TestPermisosGestionAuditorias:
+    """Pruebas de las reglas de capa/área por rol en la gestión."""
+
+    def setup_method(self):
+        self.mock_session = MagicMock(spec=Session)
+        self.service = AuditoriaService(self.mock_session)
+        self.area_ensamble = Area(id=10, nombre="Ensamble Final SB")
+        self.area_otra = Area(id=20, nombre="Otra Area")
+        self.supervisor = _usuario_supervisor([self.area_ensamble])
+        self.gerente = _usuario_gerente()
+        self.mock_session.get.side_effect = lambda cls, id: MagicMock(
+            spec=cls, nombre="Mock", id=id
+        )
+
+    def _mock_capas(self):
+        """Mock de session.exec: catálogos de Capa, Area y Frecuencia."""
+        from app.models.frecuencia import Frecuencia
+
+        catalogs = {
+            "Capa": _capas_base(),
+            "Area": [self.area_ensamble, self.area_otra],
+            "Frecuencia": [Frecuencia(id=1, nombre="Mensual")],
+        }
+
+        def _exec(query, *args, **kwargs):
+            nombre = query.column_descriptions[0]["entity"].__name__
+            resultado = MagicMock()
+            resultado.all.return_value = catalogs.get(nombre, [])
+            return resultado
+
+        self.mock_session.exec.side_effect = _exec
+
+    def _datos(self, capa_id: int, area_id: int | None) -> AuditoriaCreate:
+        return AuditoriaCreate(
+            nombre=f"Aud-{capa_id}-{area_id}",
+            activa=True,
+            capa_id=capa_id,
+            frecuencia_id=1,
+            area_id=area_id,
+        )
+
+    def _crear_con_repo(self, datos: AuditoriaCreate) -> Auditoria:
+        with patch.object(
+            CapaService, "obtener_por_id", return_value=MagicMock(spec=Capa)
+        ):
+            with patch.object(
+                FrecuenciaService,
+                "obtener_por_id",
+                return_value=MagicMock(spec=Frecuencia),
+            ):
+                with patch.object(
+                    AuditoriaRepository, "obtener_por_nombre", return_value=None
+                ):
+                    with patch.object(
+                        AuditoriaRepository,
+                        "crear",
+                        return_value=Auditoria(id=1, **datos.model_dump()),
+                    ):
+                        return self.service.crear(datos, self.supervisor)
+
+    def test_supervisor_crea_auditoria_en_su_area(self):
+        """Un Supervisor crea auditorías en sus áreas y capas permitidas."""
+        self._mock_capas()
+        resultado = self._crear_con_repo(self._datos(capa_id=1, area_id=10))
+        assert resultado.area_id == 10
+
+    def test_supervisor_no_puede_crear_fuera_de_sus_areas(self):
+        """Un Supervisor no puede crear fuera de sus áreas asignadas."""
+        self._mock_capas()
+        with pytest.raises(ValueError, match="fuera de sus áreas"):
+            self._crear_con_repo(self._datos(capa_id=1, area_id=20))
+
+    def test_supervisor_no_puede_crear_sin_area(self):
+        """Un Supervisor no puede crear una auditoría sin área."""
+        self._mock_capas()
+        with pytest.raises(ValueError, match="Debe seleccionar un área"):
+            self._crear_con_repo(self._datos(capa_id=1, area_id=None))
+
+    def test_supervisor_no_puede_crear_capa_superior(self):
+        """Un Supervisor no puede crear auditorías de capa Gerente."""
+        self._mock_capas()
+        with pytest.raises(ValueError, match="esa capa"):
+            self._crear_con_repo(self._datos(capa_id=3, area_id=10))
+
+    def test_supervisor_crea_en_cualquier_area_asignada(self):
+        """El Supervisor gestiona en todas sus áreas, no solo una."""
+        self.mock_session.get.side_effect = lambda cls, id: MagicMock(
+            spec=cls, nombre="Mock", id=id
+        )
+        datos = self._datos(capa_id=2, area_id=10)
+        self._mock_capas()
+
+        with patch.object(
+            CapaService, "obtener_por_id", return_value=MagicMock(spec=Capa)
+        ):
+            with patch.object(
+                FrecuenciaService,
+                "obtener_por_id",
+                return_value=MagicMock(spec=Frecuencia),
+            ):
+                with patch.object(
+                    AuditoriaRepository, "obtener_por_nombre", return_value=None
+                ):
+                    with patch.object(
+                        AuditoriaRepository,
+                        "crear",
+                        return_value=Auditoria(id=5, **datos.model_dump()),
+                    ):
+                        resultado = self.service.crear(datos, self.supervisor)
+        assert resultado.capa_id == 2
+
+    def test_gerente_crea_en_cualquier_area(self):
+        """Un Gerente crea auditorías de su capa e inferiores en cualquier área."""
+        self._mock_capas()
+        datos = AuditoriaCreate(
+            nombre="Gerente-Aud",
+            activa=True,
+            capa_id=1,
+            frecuencia_id=1,
+            area_id=20,
+        )
+        with patch.object(
+            CapaService, "obtener_por_id", return_value=MagicMock(spec=Capa)
+        ):
+            with patch.object(
+                FrecuenciaService,
+                "obtener_por_id",
+                return_value=MagicMock(spec=Frecuencia),
+            ):
+                with patch.object(
+                    AuditoriaRepository, "obtener_por_nombre", return_value=None
+                ):
+                    with patch.object(
+                        AuditoriaRepository,
+                        "crear",
+                        return_value=Auditoria(id=2, **datos.model_dump()),
+                    ):
+                        resultado = self.service.crear(datos, self.gerente)
+        assert resultado.area_id == 20
+
+    def test_supervisor_no_edita_auditoria_ajena(self):
+        """Un Supervisor no puede editar una auditoría de otra área."""
+        self._mock_capas()
+        auditoria = Auditoria(
+            id=1,
+            nombre="Ajena",
+            activa=True,
+            capa_id=1,
+            frecuencia_id=1,
+            area_id=20,
+        )
+        with patch.object(
+            AuditoriaRepository, "obtener_por_id", return_value=auditoria
+        ):
+            with pytest.raises(ValueError, match="No tiene permisos"):
+                self.service.actualizar(
+                    1, AuditoriaUpdate(nombre="X"), self.supervisor
+                )
+
+    def test_supervisor_edita_auditoria_de_su_area(self):
+        """Un Supervisor sí puede editar una auditoría de su área."""
+        self._mock_capas()
+        auditoria = Auditoria(
+            id=1,
+            nombre="Propia",
+            activa=True,
+            capa_id=1,
+            frecuencia_id=1,
+            area_id=10,
+        )
+        with patch.object(
+            AuditoriaRepository, "obtener_por_id", return_value=auditoria
+        ):
+            with patch.object(AuditoriaRepository, "actualizar", return_value=auditoria):
+                with patch.object(AuditoriaRepository, "obtener_por_nombre", return_value=None):
+                    resultado = self.service.actualizar(
+                        1, AuditoriaUpdate(nombre="Nueva"), self.supervisor
+                    )
+        assert resultado.nombre == "Nueva"
+
+    def test_listar_supervisor_filtra_por_capa_y_area(self):
+        """El listado de Supervisor filtra por sus capas y áreas."""
+        self._mock_capas()
+        visibles = Auditoria(
+            id=1, nombre="Propia", activa=True, capa_id=1, frecuencia_id=1,
+            area_id=10,
+        )
+        ajena_area = Auditoria(
+            id=2, nombre="OtraArea", activa=True, capa_id=1, frecuencia_id=1,
+            area_id=20,
+        )
+        ajena_capa = Auditoria(
+            id=3, nombre="Gerente", activa=True, capa_id=3, frecuencia_id=1,
+            area_id=10,
+        )
+        with patch.object(
+            AuditoriaRepository,
+            "listar",
+            return_value=[visibles, ajena_area, ajena_capa],
+        ):
+            resultado = self.service.listar(self.supervisor)
+        assert [a.id for a in resultado] == [1]
+
+    def test_listar_gerente_filtra_por_capa(self):
+        """El Gerente ve las auditorías de su capa y las inferiores."""
+        self._mock_capas()
+        capa_auditor = Auditoria(
+            id=1, nombre="A", activa=True, capa_id=1, frecuencia_id=1,
+            area_id=10,
+        )
+        capa_supervisor = Auditoria(
+            id=2, nombre="S", activa=True, capa_id=2, frecuencia_id=1,
+            area_id=20,
+        )
+        with patch.object(
+            AuditoriaRepository,
+            "listar",
+            return_value=[capa_auditor, capa_supervisor],
+        ):
+            resultado = self.service.listar(self.gerente)
+        assert [a.id for a in resultado] == [1, 2]
+
+    def test_permisos_gestion_devuelve_ids(self):
+        """El endpoint de permisos refleja capas y áreas permitidas."""
+        self._mock_capas()
+        permisos = self.service.permisos(self.supervisor)
+        assert permisos["puede_gestionar"] is True
+        assert permisos["capa_ids"] == [1, 2]
+        assert permisos["area_ids"] == [10]
+
+    def test_permisos_gestion_gerente_sin_restriccion_area(self):
+        self._mock_capas()
+        permisos = self.service.permisos(self.gerente)
+        assert permisos["capa_ids"] == [1, 2, 3]
+        assert permisos["area_ids"] is None
+
+
+class TestGestionSupervisorE2E:
+    """E2E: Supervisor crea auditoría de capa Auditor en su área y el
+    Auditor asignado la ve disponible para ejecutar («Mis pendientes»)."""
+
+    @pytest.fixture
+    def session(self):
+        from sqlmodel import SQLModel, create_engine
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}
+        )
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            yield session
+
+    def test_auditoria_creada_por_supervisor_es_visible_para_auditor(
+        self, session: Session
+    ):
+        from sqlmodel import select
+
+        from app.models.frecuencia import Frecuencia
+        from app.models.rol import Rol
+        from app.models.usuario import Usuario
+        from app.models.usuario_area import UsuarioArea
+        from app.seed import (
+            _seed_areas,
+            _seed_capas,
+            _seed_frecuencias,
+            _seed_roles,
+        )
+        from app.services.ejecucion_auditoria_service import (
+            EjecucionAuditoriaService,
+        )
+
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_roles(session)
+        _seed_areas(session)
+        area = session.exec(
+            select(Area).where(Area.nombre == "Ensamble Final")
+        ).first()
+        frecuencia = session.exec(select(Frecuencia)).first()
+        capa_auditor = session.exec(
+            select(Capa).where(Capa.nombre == "Auditor")
+        ).first()
+
+        def _usuario_real(nombre: str, rol: str) -> Usuario:
+            rol_id = session.exec(
+                select(Rol).where(Rol.nombre == rol)
+            ).first().id
+            usuario = Usuario(
+                nombre=nombre,
+                correo=f"{nombre}@lpa.com",
+                contrasena_hash="x",
+                activo=True,
+                rol_id=rol_id,
+            )
+            session.add(usuario)
+            session.commit()
+            session.refresh(usuario)
+            return usuario
+
+        supervisor = _usuario_real("Sup SB", "Supervisor")
+        auditor = _usuario_real("Aud SB", "Auditor")
+        session.add(UsuarioArea(usuario_id=supervisor.id, area_id=area.id))
+        session.add(UsuarioArea(usuario_id=auditor.id, area_id=area.id))
+        session.commit()
+
+        datos = AuditoriaCreate(
+            nombre="Control de proceso - Ensamble Final SB",
+            activa=True,
+            capa_id=capa_auditor.id,
+            frecuencia_id=frecuencia.id,
+            area_id=area.id,
+        )
+        creada = AuditoriaService(session).crear(datos, supervisor)
+
+        # El auditor de esa área la ve en «Mis pendientes».
+        disponibles = EjecucionAuditoriaService(session).listar_disponibles(
+            auditor
+        )
+        assert any(a.id == creada.id for a in disponibles)
+
+        # El supervisor solo ve su propia auditoría en la gestión.
+        visibles = AuditoriaService(session).listar(supervisor)
+        assert [a.id for a in visibles] == [creada.id]
+
+        # Un auditor no puede gestionarla (solo ejecutarla).
+        assert AuditoriaService(session).puede_gestionar(auditor, creada) is False
+        with pytest.raises(ValueError, match="No tiene permisos"):
+            AuditoriaService(session).actualizar(
+                creada.id, AuditoriaUpdate(nombre="X"), auditor
+            )

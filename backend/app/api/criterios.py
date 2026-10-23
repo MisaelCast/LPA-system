@@ -13,9 +13,31 @@ from app.schemas.criterio import (
     CriterioRead,
     CriterioUpdate,
 )
+from app.services.auditoria_service import ROLES_GESTION_AUDITORIAS
 from app.services.criterio_service import CriterioService
 
 router = APIRouter(tags=["criterios"])
+
+_ROLES = require_roles(*ROLES_GESTION_AUDITORIAS)
+
+
+def _mapear_error_criterio(error: ValueError) -> HTTPException:
+    """Traduce los ValueErrors del servicio a respuestas HTTP."""
+    mensaje = str(error)
+    if "no tiene permisos" in mensaje.lower():
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=mensaje,
+        )
+    if "no encontrad" in mensaje.lower() or "no existe" in mensaje.lower():
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=mensaje,
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=mensaje,
+    )
 
 
 @router.get(
@@ -25,13 +47,19 @@ router = APIRouter(tags=["criterios"])
 def listar_criterios(
     auditoria_id: int,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    usuario: Usuario = Depends(_ROLES),
 ) -> list[Criterio]:
     """Lista los criterios de una auditoria ordenados por orden.
 
-    Solo accesible por usuarios con rol **Administrador**.
+    Un Supervisor o Gerente solo puede consultar las auditorías de sus
+    capas/áreas.
     """
-    return CriterioService(session).listar_por_auditoria(auditoria_id)
+    service = CriterioService(session)
+    try:
+        service._validar_auditoria_gestionable(auditoria_id, usuario)
+    except ValueError as error:
+        raise _mapear_error_criterio(error)
+    return service.listar_por_auditoria(auditoria_id)
 
 
 @router.get(
@@ -41,20 +69,22 @@ def listar_criterios(
 def obtener_criterio(
     criterio_id: int,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    usuario: Usuario = Depends(_ROLES),
 ) -> Criterio:
     """Consulta un criterio por su identificador.
 
-    Solo accesible por usuarios con rol **Administrador**.
+    Un Supervisor o Gerente solo puede consultar criterios de las
+    auditorías de sus capas/áreas.
     """
     service = CriterioService(session)
     try:
-        return service.obtener_por_id(criterio_id)
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(error),
+        criterio = service.obtener_por_id(criterio_id)
+        service._validar_auditoria_gestionable(
+            criterio.auditoria_id, usuario
         )
+        return criterio
+    except ValueError as error:
+        raise _mapear_error_criterio(error)
 
 
 @router.post(
@@ -66,25 +96,18 @@ def crear_criterio(
     auditoria_id: int,
     datos: CriterioCreate,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    usuario: Usuario = Depends(_ROLES),
 ) -> Criterio:
     """Crea un nuevo criterio dentro de una auditoria.
 
-    Solo accesible por usuarios con rol **Administrador**.
+    Un Supervisor o Gerente solo puede crear criterios en las auditorías
+    de sus capas/áreas.
     """
     service = CriterioService(session)
     try:
-        return service.crear(auditoria_id, datos)
+        return service.crear(auditoria_id, datos, usuario)
     except ValueError as error:
-        if "no existe" in str(error).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(error),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+        raise _mapear_error_criterio(error)
 
 
 @router.put("/criterios/{criterio_id}", response_model=CriterioRead)
@@ -92,27 +115,20 @@ def actualizar_criterio(
     criterio_id: int,
     datos: CriterioUpdate,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    usuario: Usuario = Depends(_ROLES),
 ) -> Criterio:
     """Actualiza los datos de un criterio existente.
 
     El auditoria_id no puede modificarse desde este endpoint.
     Solo los campos enviados en el cuerpo seran modificados.
-    Solo accesible por usuarios con rol **Administrador**.
+    Un Supervisor o Gerente solo puede modificar criterios de las
+    auditorías de sus capas/áreas.
     """
     service = CriterioService(session)
     try:
-        return service.actualizar(criterio_id, datos)
+        return service.actualizar(criterio_id, datos, usuario)
     except ValueError as error:
-        if "no encontrado" in str(error).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(error),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+        raise _mapear_error_criterio(error)
 
 
 @router.patch(
@@ -123,22 +139,15 @@ def cambiar_estado_criterio(
     criterio_id: int,
     datos: CriterioEstadoUpdate,
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    usuario: Usuario = Depends(_ROLES),
 ) -> Criterio:
     """Activa o desactiva un criterio.
 
-    Solo accesible por usuarios con rol **Administrador**.
+    Un Supervisor o Gerente solo puede modificar criterios de las
+    auditorías de sus capas/áreas.
     """
     service = CriterioService(session)
     try:
-        return service.cambiar_estado(criterio_id, datos.activo)
+        return service.cambiar_estado(criterio_id, datos.activo, usuario)
     except ValueError as error:
-        if "no encontrado" in str(error).lower():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(error),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
-        )
+        raise _mapear_error_criterio(error)

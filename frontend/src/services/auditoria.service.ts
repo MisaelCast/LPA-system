@@ -1,8 +1,19 @@
 import api from '@/api/api'
-import type { Auditoria, AuditoriaCreate, AuditoriaUpdate } from '@/types/auditoria'
+import type {
+  Auditoria,
+  AuditoriaCreate,
+  AuditoriaUpdate,
+  PermisosGestionAuditorias,
+} from '@/types/auditoria'
 
 export function obtenerAuditorias(): Promise<Auditoria[]> {
   return api.get<Auditoria[]>('/auditorias').then((res) => res.data)
+}
+
+export function obtenerPermisosGestion(): Promise<PermisosGestionAuditorias> {
+  return api
+    .get<PermisosGestionAuditorias>('/auditorias/permisos-gestion')
+    .then((res) => res.data)
 }
 
 export function crearAuditoria(datos: AuditoriaCreate): Promise<Auditoria> {
