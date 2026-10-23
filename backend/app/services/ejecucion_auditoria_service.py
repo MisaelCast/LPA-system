@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, func, select
+from sqlmodel import Session, func, or_, select
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
@@ -15,7 +15,9 @@ from app.models.hallazgo import Hallazgo
 from app.models.respuesta import Respuesta
 from app.models.rol import Rol
 from app.models.usuario import Usuario
+from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
+from app.models.usuario_supervisor import UsuarioSupervisor
 from app.repositories.ejecucion_auditoria_repository import (
     EjecucionAuditoriaRepository,
 )
@@ -203,6 +205,37 @@ class EjecucionAuditoriaService:
 
         return ejecucion
 
+    def _areas_operativas(self, usuario: Usuario) -> list[int]:
+        """Áreas donde el usuario puede ejecutar auditorías.
+
+        Los auditores y supervisores usan las áreas asignadas directamente.
+        Los gerentes además heredan las áreas de los supervisores a su cargo,
+        ya que en la asignación por rol solo se les vinculan supervisores.
+        """
+        rol_nombre = getattr(getattr(usuario, "rol", None), "nombre", "")
+        areas_ids = {a.id for a in usuario.areas if a.id is not None}
+
+        if rol_nombre == "Gerente":
+            supervisores_ids = list(
+                self._session.exec(
+                    select(UsuarioSupervisor.supervisor_id).where(
+                        UsuarioSupervisor.gerente_id == usuario.id
+                    )
+                ).all()
+            )
+            if supervisores_ids:
+                areas_ids.update(
+                    area_id
+                    for area_id in self._session.exec(
+                        select(UsuarioArea.area_id).where(
+                            UsuarioArea.usuario_id.in_(supervisores_ids)
+                        )
+                    ).all()
+                    if area_id is not None
+                )
+
+        return sorted(areas_ids)
+
     def listar_disponibles(self, usuario: Usuario) -> list[Auditoria]:
         query = select(Auditoria).where(Auditoria.activa == True)  # noqa: E712
 
@@ -220,11 +253,18 @@ class EjecucionAuditoriaService:
                 query = query.where(Auditoria.capa_id == capa.id)
 
             # Restringe a las áreas asignadas del usuario.
-            areas_ids = [a.id for a in usuario.areas]
+            areas_ids = self._areas_operativas(usuario)
             if areas_ids:
-                query = query.where(Auditoria.area_id.in_(areas_ids))
-            else:
+                query = query.where(
+                    or_(
+                        Auditoria.area_id.in_(areas_ids),
+                        Auditoria.area_id.is_(None),
+                    )
+                )
+            elif rol_nombre != "Gerente":
                 query = query.where(Auditoria.id == -1)
+            # Un gerente sin áreas propias ni supervisores asignados puede
+            # ejecutar las auditorías de su capa en cualquier área.
 
         auditorias = list(self._session.exec(query).all())
 

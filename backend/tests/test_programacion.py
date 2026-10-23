@@ -19,6 +19,7 @@ from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
+from app.models.usuario_supervisor import UsuarioSupervisor
 from app.seed import _seed_areas, _seed_auditoria_ensamble_final, _seed_auditoria_verificacion_supervisor, _seed_capas, _seed_frecuencias, _seed_roles
 from app.services.ejecucion_auditoria_service import (
     DiaNoHabilitadoError,
@@ -212,6 +213,78 @@ class TestPendientesServicio:
         assert len(items) == 1
         assert items[0]["estado"] == "en_progreso"
         assert items[0]["accion"] == "continuar"
+
+
+    def _base_gerente(
+        self, session: Session
+    ) -> tuple[Usuario, Usuario, Auditoria]:
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_roles(session)
+        _seed_areas(session)
+        area = session.exec(
+            select(Area).where(Area.nombre == "Ensamble Final")
+        ).first()
+        supervisor = _usuario(session, "Sergio Supervisor", "Supervisor")
+        session.add(UsuarioArea(usuario_id=supervisor.id, area_id=area.id))
+        gerente = _usuario(session, "Gina Gerente", "Gerente")
+        session.add(
+            UsuarioSupervisor(
+                gerente_id=gerente.id, supervisor_id=supervisor.id
+            )
+        )
+        capa = session.exec(select(Capa).where(Capa.nombre == "Gerente")).first()
+        frecuencia = session.exec(
+            select(Frecuencia).where(Frecuencia.nombre == "Semanal")
+        ).first()
+        auditoria = Auditoria(
+            nombre="Auditoría de Verificación - Gerente",
+            activa=True,
+            tipo_respuesta="cumplimiento",
+            capa_id=capa.id,
+            frecuencia_id=frecuencia.id,
+            area_id=area.id,
+        )
+        session.add(auditoria)
+        session.commit()
+        session.refresh(gerente)
+        session.refresh(auditoria)
+        return gerente, supervisor, auditoria
+
+    def test_gerente_ejecuta_auditoria_disponible(self, session: Session):
+        """El gerente ve y ejecuta su auditoría según las áreas de sus supervisores."""
+        gerente, _, auditoria = self._base_gerente(session)
+        service = EjecucionAuditoriaService(session)
+
+        items = service.mis_pendientes(gerente)
+        assert len(items) == 1
+        item = items[0]
+        assert item["auditoria_id"] == auditoria.id
+        assert item["estado"] == "disponible"
+        assert item["accion"] == "iniciar"
+        assert item["ejecucion_id"] is not None
+
+        iniciada = service.iniciar_pendiente(item["ejecucion_id"], gerente)
+        assert iniciada.estado == "en_proceso"
+
+    def test_generar_pendientes_incluye_gerente(self, session: Session):
+        """La generación automática crea la pendiente también para el gerente."""
+        gerente, supervisor, auditoria = self._base_gerente(session)
+
+        generar_pendientes(session)
+
+        pendientes = list(
+            session.exec(
+                select(EjecucionAuditoria).where(
+                    EjecucionAuditoria.auditoria_id == auditoria.id,
+                    EjecucionAuditoria.estado == "pendiente",
+                )
+            ).all()
+        )
+        assert {p.usuario_id for p in pendientes} == {
+            gerente.id,
+            supervisor.id,
+        }
 
 
 class TestAsignacionUsuario:

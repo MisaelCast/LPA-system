@@ -13,6 +13,7 @@ from app.models.rol import Rol
 from app.models.usuario import Usuario
 from app.models.usuario_area import UsuarioArea
 from app.models.usuario_celula import UsuarioCelula
+from app.models.usuario_supervisor import UsuarioSupervisor
 from app.services.programacion_semanal_service import auditoria_del_dia
 from app.utils.tiempo import ahora_business
 
@@ -242,8 +243,12 @@ def _responsables_de_celula(
 def _responsables_de_area(
     session: Session, area_id: int
 ) -> list[Usuario]:
-    """Supervisores asignados a un área (para auditorías de verificación)."""
-    return list(
+    """Responsables de una auditoría de verificación por área.
+
+    Incluye a los supervisores asignados al área y a los gerentes que los
+    tienen a su cargo (o que tengan el área asignada explícitamente).
+    """
+    supervisores = list(
         session.exec(
             select(Usuario)
             .join(UsuarioArea, Usuario.id == UsuarioArea.usuario_id)
@@ -255,6 +260,44 @@ def _responsables_de_area(
             )
         ).all()
     )
+
+    supervisores_ids = [u.id for u in supervisores if u.id is not None]
+    gerentes: list[Usuario] = []
+    if supervisores_ids:
+        gerentes = list(
+            session.exec(
+                select(Usuario)
+                .join(
+                    UsuarioSupervisor,
+                    Usuario.id == UsuarioSupervisor.gerente_id,
+                )
+                .join(Rol, Usuario.rol_id == Rol.id)
+                .where(
+                    UsuarioSupervisor.supervisor_id.in_(supervisores_ids),
+                    Rol.nombre == "Gerente",
+                    Usuario.activo == True,  # noqa: E712
+                )
+            ).all()
+        )
+
+    gerentes_del_area = list(
+        session.exec(
+            select(Usuario)
+            .join(UsuarioArea, Usuario.id == UsuarioArea.usuario_id)
+            .join(Rol, Usuario.rol_id == Rol.id)
+            .where(
+                UsuarioArea.area_id == area_id,
+                Rol.nombre == "Gerente",
+                Usuario.activo == True,  # noqa: E712
+            )
+        ).all()
+    )
+
+    responsables: list[Usuario] = []
+    for usuario in [*supervisores, *gerentes, *gerentes_del_area]:
+        if usuario not in responsables:
+            responsables.append(usuario)
+    return responsables
 
 
 def generar_pendientes(
