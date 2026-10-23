@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.auditoria_dia import dias_elegidos
 from app.models.celula import Celula
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.frecuencia import Frecuencia
@@ -61,11 +62,15 @@ def periodo_auditoria(
 ) -> datetime:
     """Fecha objetivo del periodo vigente para una auditoría.
 
-    Si la auditoría tiene ``dia_semana`` fijado (0=Lunes..6=Domingo), el periodo
-    es el día de la semana de la semana actual (p. ej., el viernes). En otro
-    caso se usa ``inicio_periodo``.
+    Si la auditoría tiene días elegidos (``dias_semana``), el periodo es la
+    fecha concreta del día elegido vigente (cada día elegido genera su propia
+    ejecución, dentro del periodo de la frecuencia). Si tiene ``dia_semana``
+    fijado (0=Lunes..6=Domingo), el periodo es el día de la semana de la
+    semana actual (p. ej., el viernes). En otro caso se usa ``inicio_periodo``.
     """
     ahora = ahora or ahora_business()
+    if dias_elegidos(auditoria):
+        return fecha_habilita(auditoria, frecuencia, ahora)
     if auditoria.dia_semana is not None:
         base = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
         delta = auditoria.dia_semana - base.weekday()
@@ -80,12 +85,35 @@ def fecha_habilita(
 ) -> datetime | None:
     """Fecha en que la auditoría se habilita.
 
+    - Con días elegidos (``dias_semana``): hoy si hoy es un día elegido; si un
+      día elegido de la semana ya pasó sin ejecutarse, la fecha de ese día
+      (queda atrasada); si no, el próximo día elegido (bloqueada).
     - Auditorías con ``dia_semana`` (semanales): se habilitan ese día.
     - Diarias (``frecuencia.dias == 1``): se habilitan de lunes a viernes;
       el fin de semana no se habilita (la siguiente es el lunes).
     - En otro caso: ``None`` (disponible cualquier día).
     """
     ahora = ahora or ahora_business()
+    dias = dias_elegidos(auditoria)
+    if dias:
+        base = ahora.replace(hour=0, minute=0, second=0, microsecond=0)
+        if base.weekday() in dias:
+            return base
+        # Día elegido de esta semana que ya pasó: muestra la ocurrencia
+        # pendiente como atrasada (mientras no se cierre o avance la semana).
+        pasados = [
+            base - timedelta(days=base.weekday() - d)
+            for d in dias
+            if d < base.weekday()
+        ]
+        if pasados:
+            return max(pasados)
+        # Próximo día elegido (esta o la siguiente semana).
+        for delta in range(1, 8):
+            candidato = base + timedelta(days=delta)
+            if candidato.weekday() in dias:
+                return candidato
+        return base
     if auditoria.dia_semana is not None:
         return periodo_auditoria(auditoria, frecuencia, ahora)
     if frecuencia.dias == 1:
@@ -104,6 +132,7 @@ def siguiente_habilita(
 ) -> datetime | None:
     """Siguiente ocurrencia **después** de completar el periodo actual.
 
+    - Con días elegidos (``dias_semana``): el próximo día elegido.
     - Semanales (``dia_semana``): +7 días.
     - Diarias: el siguiente día hábil (salta fin de semana).
     - Otras sin día fijo: ``None`` (el ítem desaparece hasta el siguiente
@@ -111,6 +140,12 @@ def siguiente_habilita(
     """
     if habilita is None:
         return None
+    dias = dias_elegidos(auditoria)
+    if dias:
+        siguiente = habilita + timedelta(days=1)
+        while siguiente.weekday() not in dias:
+            siguiente += timedelta(days=1)
+        return siguiente
     if auditoria.dia_semana is not None:
         return habilita + timedelta(days=7)
     if frecuencia.dias == 1:

@@ -4,6 +4,7 @@ from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
     from app.models.area import Area
+    from app.models.auditoria_dia import AuditoriaDia
     from app.models.capa import Capa
     from app.models.criterio import Criterio
     from app.models.ejecucion_auditoria import EjecucionAuditoria
@@ -32,4 +33,12 @@ class Auditoria(SQLModel, table=True):
     criterios: list["Criterio"] = Relationship(back_populates="auditoria")
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="auditoria",
+    )
+    # Días hábiles elegidos (recurrencia semanal); se cargan al consultar la
+    # auditoría para evitar consultas diferidas en la lógica de programación.
+    dias_rows: list["AuditoriaDia"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+        },
     )

@@ -2,6 +2,7 @@
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.auditoria_dia import AuditoriaDia
 from app.models.capa import Capa
 from app.models.celula import Celula
 from app.models.criterio import Criterio
@@ -22,6 +23,7 @@ from app.models.usuario_supervisor import UsuarioSupervisor
 __all__ = [
     "Area",
     "Auditoria",
+    "AuditoriaDia",
     "Capa",
     "Celula",
     "Criterio",

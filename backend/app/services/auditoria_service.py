@@ -4,6 +4,7 @@ from sqlmodel import Session, func, select
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.auditoria_dia import AuditoriaDia, dias_elegidos
 from app.repositories.auditoria_repository import AuditoriaRepository
 from app.schemas.auditoria import AuditoriaCreate, AuditoriaUpdate
 from app.services.capa_service import CapaService
@@ -159,6 +160,7 @@ class AuditoriaService:
         object.__setattr__(auditoria, "capa_nombre", "")
         object.__setattr__(auditoria, "frecuencia_nombre", "")
         object.__setattr__(auditoria, "area_nombre", None)
+        object.__setattr__(auditoria, "dias_semana", dias_elegidos(auditoria))
 
         if auditoria.capa_id is not None:
             from app.models.capa import Capa
@@ -258,7 +260,37 @@ class AuditoriaService:
         )
 
         creada = self._repo.crear(auditoria)
+
+        dias = list(datos.dias_semana or [])
+        if dias and creada.id is not None:
+            for dia in dias:
+                self._session.add(
+                    AuditoriaDia(auditoria_id=creada.id, dia_semana=dia)
+                )
+            self._session.commit()
+        object.__setattr__(creada, "dias_semana", dias)
+
         return self._enriquecer_read(creada)
+
+    def _reemplazar_dias(self, auditoria_id: int, dias: list[int]) -> None:
+        """Reemplaza los días elegidos de una auditoría por ``dias``."""
+        existentes = list(
+            self._session.exec(
+                select(AuditoriaDia).where(
+                    AuditoriaDia.auditoria_id == auditoria_id
+                )
+            ).all()
+        )
+        nuevos = set(dias)
+        for fila in existentes:
+            if fila.dia_semana not in nuevos:
+                self._session.delete(fila)
+        presentes = {f.dia_semana for f in existentes}
+        for dia in sorted(nuevos - presentes):
+            self._session.add(
+                AuditoriaDia(auditoria_id=auditoria_id, dia_semana=dia)
+            )
+        self._session.commit()
 
     def actualizar(
         self, auditoria_id: int, datos: AuditoriaUpdate, usuario
@@ -321,6 +353,13 @@ class AuditoriaService:
             auditoria.area_id = datos.area_id
 
         actualizada = self._repo.actualizar(auditoria)
+
+        if datos.dias_semana is not None and actualizada.id is not None:
+            self._reemplazar_dias(actualizada.id, datos.dias_semana)
+            object.__setattr__(
+                actualizada, "dias_semana", list(datos.dias_semana)
+            )
+
         return self._enriquecer_read(actualizada)
 
     def cambiar_estado(

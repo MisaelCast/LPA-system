@@ -1,6 +1,6 @@
 """Pruebas de programación de auditorías (pendientes, frecuencia, asignación)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.auditoria_dia import AuditoriaDia
 from app.models.capa import Capa
 from app.models.celula import Celula
 from app.models.criterio import Criterio
@@ -27,7 +28,14 @@ from app.services.ejecucion_auditoria_service import (
     EjecucionAuditoriaService,
 )
 from app.services.hallazgo_service import HallazgoService
-from app.services.programacion_service import generar_pendientes, inicio_periodo
+from app.services.programacion_service import (
+    fecha_habilita,
+    generar_pendientes,
+    inicio_periodo,
+    periodo_auditoria,
+    siguiente_habilita,
+)
+from app.services.programacion_semanal_service import plan_semanal_usuario
 from app.services.usuario_service import UsuarioService
 
 
@@ -507,5 +515,235 @@ class TestProgramacionSemanal:
             # Se intenta otra del mismo periodo -> duplicada (409).
             with pytest.raises(EjecucionAbiertaError):
                 service.iniciar(auditoria.id, supervisor, celula_id=None)
+        finally:
+            patch.stopall()
+
+
+class TestDiasSemanaRecurrentes:
+    """Días hábiles elegidos al crear la auditoría (recurrencia semanal).
+
+    Semana de referencia: lunes 2026-10-19 … viernes 2026-10-23.
+    """
+
+    LUNES = datetime(2026, 10, 19, 10, 0, tzinfo=timezone.utc)
+    MARTES = datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc)
+    MIERCOLES = datetime(2026, 10, 21, 10, 0, tzinfo=timezone.utc)
+    JUEVES = datetime(2026, 10, 22, 10, 0, tzinfo=timezone.utc)
+    VIERNES = datetime(2026, 10, 23, 10, 0, tzinfo=timezone.utc)
+    SABADO = datetime(2026, 10, 24, 10, 0, tzinfo=timezone.utc)
+
+    @staticmethod
+    def _auditoria_con_dias(dias: list[int]) -> Auditoria:
+        auditoria = Auditoria(
+            nombre="Control Martes Jueves",
+            activa=True,
+            capa_id=1,
+            frecuencia_id=1,
+        )
+        object.__setattr__(auditoria, "dias_semana", dias)
+        return auditoria
+
+    @staticmethod
+    def _frecuencia(dias: int = 7) -> Frecuencia:
+        return Frecuencia(nombre="Semanal", descripcion="", dias=dias)
+
+    def _fijar_hoy(self, fecha: datetime) -> None:
+        patch(
+            "app.services.ejecucion_auditoria_service.ahora_business",
+            return_value=fecha,
+        ).start()
+        patch(
+            "app.services.programacion_service.ahora_business",
+            return_value=fecha,
+        ).start()
+
+    # ——— fecha_habilita / periodo / siguiente ———
+
+    def test_fecha_habilita_hoy_es_un_dia_elegido(self):
+        a = self._auditoria_con_dias([1, 3])
+        medianoche = self.MARTES.replace(hour=0, minute=0, second=0, microsecond=0)
+        assert fecha_habilita(a, self._frecuencia(), self.MARTES) == medianoche
+
+    def test_fecha_habilita_proximo_dia_elegido(self):
+        a = self._auditoria_con_dias([1, 3])
+        medianoche = self.MARTES.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Lunes: sin días elegidos pasados → el próximo (martes de la semana).
+        assert fecha_habilita(a, self._frecuencia(), self.LUNES) == medianoche
+
+    def test_fecha_habilita_dia_elegido_pasado_queda_atrasada(self):
+        a = self._auditoria_con_dias([1, 3])
+        # Miércoles: el martes ya pasó → muestra el martes (atrasada); el
+        # jueves se verá al completar el martes (siguiente_habilita).
+        assert fecha_habilita(
+            a, self._frecuencia(), self.MIERCOLES
+        ) == datetime(2026, 10, 20, tzinfo=timezone.utc)
+        # Viernes: el último día elegido pasó (jueves 22).
+        assert fecha_habilita(
+            a, self._frecuencia(), self.VIERNES
+        ) == datetime(2026, 10, 22, tzinfo=timezone.utc)
+        # Sábado también apunta al jueves pasado.
+        assert fecha_habilita(
+            a, self._frecuencia(), self.SABADO
+        ) == datetime(2026, 10, 22, tzinfo=timezone.utc)
+
+    def test_fecha_habilita_un_solo_dia_elegido(self):
+        a = self._auditoria_con_dias([0])  # solo lunes
+        # Viernes: el lunes de esta semana ya pasó → atrasada (lunes 19);
+        # al completarlo, siguiente_habilita apunta al lunes 26.
+        assert fecha_habilita(
+            a, self._frecuencia(), self.VIERNES
+        ) == datetime(2026, 10, 19, tzinfo=timezone.utc)
+        assert siguiente_habilita(
+            a, self._frecuencia(), datetime(2026, 10, 19, tzinfo=timezone.utc)
+        ) == datetime(2026, 10, 26, tzinfo=timezone.utc)
+
+    def test_periodo_es_la_fecha_del_dia_elegido(self):
+        a = self._auditoria_con_dias([1, 3])
+        # Cada día elegido tiene su propio periodo (una ejecución por día).
+        assert periodo_auditoria(
+            a, self._frecuencia(), self.MARTES
+        ) == datetime(2026, 10, 20, tzinfo=timezone.utc)
+        assert periodo_auditoria(
+            a, self._frecuencia(), self.JUEVES
+        ) == datetime(2026, 10, 22, tzinfo=timezone.utc)
+
+    def test_siguiente_habilita_va_al_proximo_dia_elegido(self):
+        a = self._auditoria_con_dias([1, 3])
+        habilita = datetime(2026, 10, 20, tzinfo=timezone.utc)
+        # Después del martes → jueves; después del jueves → martes siguiente.
+        assert siguiente_habilita(
+            a, self._frecuencia(), habilita
+        ) == datetime(2026, 10, 22, tzinfo=timezone.utc)
+        assert siguiente_habilita(
+            a, self._frecuencia(), datetime(2026, 10, 22, tzinfo=timezone.utc)
+        ) == datetime(2026, 10, 27, tzinfo=timezone.utc)
+
+    # ——— generación de pendientes ———
+
+    def _base_dias(
+        self, session: Session, dias: list[int]
+    ) -> tuple[Auditoria, Usuario, Celula]:
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_roles(session)
+        _seed_areas(session)
+        area = session.exec(
+            select(Area).where(Area.nombre == "Ensamble Final")
+        ).first()
+        celula = Celula(numero=1, activa=True, area_id=area.id)
+        session.add(celula)
+        session.commit()
+        session.refresh(celula)
+
+        auditor = _usuario(session, "Ana Auditora", "Auditor")
+        session.add(UsuarioArea(usuario_id=auditor.id, area_id=area.id))
+        session.add(UsuarioCelula(usuario_id=auditor.id, celula_id=celula.id))
+        session.commit()
+
+        frecuencia = session.exec(
+            select(Frecuencia).where(Frecuencia.nombre == "Semanal")
+        ).first()
+        capa = session.exec(select(Capa).where(Capa.nombre == "Auditor")).first()
+        auditoria = Auditoria(
+            nombre="Control por días",
+            activa=True,
+            capa_id=capa.id,
+            frecuencia_id=frecuencia.id,
+            area_id=area.id,
+        )
+        session.add(auditoria)
+        session.commit()
+        session.refresh(auditoria)
+        for dia in dias:
+            session.add(
+                AuditoriaDia(auditoria_id=auditoria.id, dia_semana=dia)
+            )
+        session.commit()
+        return auditoria, auditor, celula
+
+    def test_genera_pendiente_en_cada_dia_elegido(self, session: Session):
+        auditoria, auditor, _ = self._base_dias(session, [1, 3])
+
+        # Martes: crea el pendiente del martes.
+        generar_pendientes(session, ahora=self.MARTES)
+        pendientes = list(session.exec(select(EjecucionAuditoria)).all())
+        assert len(pendientes) == 1
+        assert pendientes[0].fecha_programada.date() == self.MARTES.date()
+
+        # Martes otra vez: idempotente.
+        assert generar_pendientes(session, ahora=self.MARTES)["creadas"] == 0
+
+        # Miércoles: no es un día elegido → no crea nada nuevo.
+        assert generar_pendientes(session, ahora=self.MIERCOLES)["creadas"] == 0
+        assert len(session.exec(select(EjecucionAuditoria)).all()) == 1
+
+        # Jueves: crea la segunda ejecución de la semana (periodo propio).
+        generar_pendientes(session, ahora=self.JUEVES)
+        pendientes = list(session.exec(select(EjecucionAuditoria)).all())
+        assert len(pendientes) == 2
+        assert {p.fecha_programada.date() for p in pendientes} == {
+            self.MARTES.date(),
+            self.JUEVES.date(),
+        }
+        assert all(p.usuario_id == auditor.id for p in pendientes)
+
+    def test_sin_dias_genera_segun_frecuencia(self, session: Session):
+        """Sin días elegidos la frecuencia Semanal genera una vez por semana."""
+        auditoria, _, _ = self._base_dias(session, [])
+        generar_pendientes(session, ahora=self.LUNES)
+        assert generar_pendientes(session, ahora=self.MIERCOLES)["creadas"] == 0
+        assert len(session.exec(select(EjecucionAuditoria)).all()) == 1
+
+    def test_dias_no_participan_en_el_sorteo(self, session: Session):
+        """La auditoría con días elegidos no entra al sorteo semanal."""
+        auditoria, _, _ = self._base_dias(session, [1, 3])
+        assert auditoria.programacion_semanal is False
+        admin = _usuario(session, "Admin Días", "Administrador")
+        calendario = plan_semanal_usuario(session, admin, ahora=self.LUNES)
+        nombres = [
+            dia.auditoria_nombre
+            for area in calendario.areas
+            for dia in area.dias
+            if dia.auditoria_nombre
+        ]
+        assert "Control por días" not in nombres
+
+    # ——— estados en «Mis pendientes» ———
+
+    def test_mis_pendientes_bloqueada_hasta_el_dia_elegido(self, session: Session):
+        auditoria, auditor, _ = self._base_dias(session, [1])  # solo martes
+        self._fijar_hoy(self.LUNES)
+        try:
+            items = EjecucionAuditoriaService(session).mis_pendientes(auditor)
+        finally:
+            patch.stopall()
+        assert len(items) == 1
+        item = items[0]
+        assert item["estado"] == "bloqueada"
+        assert item["contador"] == "Mañana"
+        assert item["accion"] is None
+        assert item["tooltip"] and "Martes" in item["tooltip"]
+        assert len(session.exec(select(EjecucionAuditoria)).all()) == 0
+
+    def test_mis_pendientes_disponible_el_dia_elegido(self, session: Session):
+        auditoria, auditor, _ = self._base_dias(session, [1])
+        self._fijar_hoy(self.MARTES)
+        try:
+            items = EjecucionAuditoriaService(session).mis_pendientes(auditor)
+        finally:
+            patch.stopall()
+        assert items[0]["estado"] == "disponible"
+        assert items[0]["accion"] == "iniciar"
+        assert items[0]["ejecucion_id"] is not None
+
+    def test_iniciar_fuera_del_dia_elegido_rechazado(self, session: Session):
+        auditoria, auditor, celula = self._base_dias(session, [1])
+        self._fijar_hoy(self.LUNES)
+        try:
+            service = EjecucionAuditoriaService(session)
+            with pytest.raises(DiaNoHabilitadoError):
+                service.iniciar(
+                    auditoria.id, auditor, celula_id=celula.id
+                )
         finally:
             patch.stopall()

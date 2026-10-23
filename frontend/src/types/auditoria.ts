@@ -5,6 +5,8 @@ export interface Auditoria {
   activa: boolean
   tipo_respuesta?: string
   dia_semana?: number | null
+  /** Días hábiles elegidos (0=Lunes … 4=Viernes). Vacío = según frecuencia. */
+  dias_semana?: number[]
   requiere_celula: boolean
   capa_id: number
   frecuencia_id: number
@@ -21,6 +23,7 @@ export interface AuditoriaCreate {
   capa_id: number
   frecuencia_id: number
   area_id: number | null
+  dias_semana?: number[]
 }
 
 export interface AuditoriaUpdate {
@@ -30,6 +33,8 @@ export interface AuditoriaUpdate {
   capa_id?: number
   frecuencia_id?: number
   area_id?: number
+  /** Ausente = no modificar; vacío = limpiar los días elegidos. */
+  dias_semana?: number[]
 }
 
 export interface OpcionCatalogo {

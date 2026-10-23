@@ -591,3 +591,171 @@ class TestGestionSupervisorE2E:
             AuditoriaService(session).actualizar(
                 creada.id, AuditoriaUpdate(nombre="X"), auditor
             )
+
+
+class TestAuditoriaDiasSemana:
+    """CRUD de los días hábiles elegidos al crear/editar la auditoría."""
+
+    @pytest.fixture
+    def session(self):
+        from sqlmodel import SQLModel, create_engine
+
+        engine = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}
+        )
+        SQLModel.metadata.create_all(engine)
+        with Session(engine) as session:
+            yield session
+
+    def _preparar(self, session: Session):
+        from sqlmodel import select
+
+        from app.models.rol import Rol
+        from app.models.usuario import Usuario
+        from app.seed import (
+            _seed_areas,
+            _seed_capas,
+            _seed_frecuencias,
+            _seed_roles,
+        )
+
+        _seed_capas(session)
+        _seed_frecuencias(session)
+        _seed_roles(session)
+        _seed_areas(session)
+        area = session.exec(
+            select(Area).where(Area.nombre == "Ensamble Final")
+        ).first()
+        frecuencia = session.exec(
+            select(Frecuencia).where(Frecuencia.nombre == "Semanal")
+        ).first()
+        capa = session.exec(select(Capa).where(Capa.nombre == "Auditor")).first()
+        rol_id = session.exec(
+            select(Rol).where(Rol.nombre == "Administrador")
+        ).first().id
+        admin = Usuario(
+            nombre="Admin Días",
+            correo="admin.dias@lpa.com",
+            contrasena_hash="x",
+            activo=True,
+            rol_id=rol_id,
+        )
+        session.add(admin)
+        session.commit()
+        session.refresh(admin)
+        return area, frecuencia, capa, admin
+
+    def test_crear_con_dias_persiste_y_se_listan(self, session: Session):
+        from sqlmodel import select
+
+        from app.models.auditoria_dia import AuditoriaDia
+
+        area, frecuencia, capa, admin = self._preparar(session)
+        service = AuditoriaService(session)
+        creada = service.crear(
+            AuditoriaCreate(
+                nombre="Martes y Jueves",
+                activa=True,
+                capa_id=capa.id,
+                frecuencia_id=frecuencia.id,
+                area_id=area.id,
+                dias_semana=[3, 1],
+            ),
+            admin,
+        )
+
+        filas = session.exec(
+            select(AuditoriaDia)
+            .where(AuditoriaDia.auditoria_id == creada.id)
+            .order_by(AuditoriaDia.dia_semana)
+        ).all()
+        assert [f.dia_semana for f in filas] == [1, 3]
+
+        visibles = service.listar(admin)
+        assert visibles[0].dias_semana == [1, 3]
+
+    def test_crear_sin_dias_no_crea_filas(self, session: Session):
+        from sqlmodel import select
+
+        from app.models.auditoria_dia import AuditoriaDia
+
+        area, frecuencia, capa, admin = self._preparar(session)
+        creada = AuditoriaService(session).crear(
+            AuditoriaCreate(
+                nombre="Según frecuencia",
+                activa=True,
+                capa_id=capa.id,
+                frecuencia_id=frecuencia.id,
+                area_id=area.id,
+            ),
+            admin,
+        )
+        filas = session.exec(
+            select(AuditoriaDia).where(AuditoriaDia.auditoria_id == creada.id)
+        ).all()
+        assert filas == []
+        visibles = AuditoriaService(session).listar(admin)
+        assert visibles[0].dias_semana == []
+
+    def test_actualizar_reemplaza_conserva_y_limpia_dias(self, session: Session):
+        from sqlmodel import select
+
+        from app.models.auditoria_dia import AuditoriaDia
+
+        area, frecuencia, capa, admin = self._preparar(session)
+        service = AuditoriaService(session)
+        creada = service.crear(
+            AuditoriaCreate(
+                nombre="Días editables",
+                activa=True,
+                capa_id=capa.id,
+                frecuencia_id=frecuencia.id,
+                area_id=area.id,
+                dias_semana=[1, 3],
+            ),
+            admin,
+        )
+
+        def _dias_bd() -> list[int]:
+            return [
+                f.dia_semana
+                for f in session.exec(
+                    select(AuditoriaDia)
+                    .where(AuditoriaDia.auditoria_id == creada.id)
+                    .order_by(AuditoriaDia.dia_semana)
+                ).all()
+            ]
+
+        # Reemplaza por otros días.
+        service.actualizar(creada.id, AuditoriaUpdate(dias_semana=[4]), admin)
+        assert _dias_bd() == [4]
+        assert service.listar(admin)[0].dias_semana == [4]
+
+        # Sin el campo (None): los días no cambian.
+        service.actualizar(creada.id, AuditoriaUpdate(nombre="Renombrada"), admin)
+        assert _dias_bd() == [4]
+
+        # Lista vacía: limpia los días y sus filas.
+        service.actualizar(creada.id, AuditoriaUpdate(dias_semana=[]), admin)
+        assert _dias_bd() == []
+        assert service.listar(admin)[0].dias_semana == []
+
+    def test_dias_invalidos_rechazados(self):
+        with pytest.raises(ValueError, match="días"):
+            AuditoriaCreate(
+                nombre="Inválida",
+                activa=True,
+                capa_id=1,
+                frecuencia_id=1,
+                dias_semana=[0, 7],
+            )
+
+    def test_dias_duplicados_y_desordenados_normalizados(self):
+        datos = AuditoriaCreate(
+            nombre="Normalizada",
+            activa=True,
+            capa_id=1,
+            frecuencia_id=1,
+            dias_semana=[3, 1, 3, 0],
+        )
+        assert datos.dias_semana == [0, 1, 3]

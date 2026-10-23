@@ -23,9 +23,18 @@ const formNombre = ref('')
 const formDescripcion = ref('')
 const formAreaId = ref<number | null>(null)
 const formCapaId = ref<number | null>(null)
-const formFrecuenciaId = ref<number | null>(null)
-const formError = ref('')
-const formGuardando = ref(false)
+  const formFrecuenciaId = ref<number | null>(null)
+  const formDias = ref<number[]>([])
+  const formError = ref('')
+  const formGuardando = ref(false)
+
+  const DIAS_HABILES = [
+    { valor: 0, etiqueta: 'Lun' },
+    { valor: 1, etiqueta: 'Mar' },
+    { valor: 2, etiqueta: 'Mié' },
+    { valor: 3, etiqueta: 'Jue' },
+    { valor: 4, etiqueta: 'Vie' },
+  ]
 
 /* ——— Criterios ——— */
 const criterioEditId = ref<number | null>(null)
@@ -161,13 +170,20 @@ function mostrarError(prefix: string, err: unknown) {
   mostrarToast('err', mensaje)
 }
 
-/* ——— Modal crear ——— */
-function abrirModalCrear() {
-  formNombre.value = ''
-  formDescripcion.value = ''
-  formAreaId.value = null
-  formCapaId.value = null
-  formFrecuenciaId.value = null
+  function toggleDia(dia: number) {
+    const i = formDias.value.indexOf(dia)
+    if (i >= 0) formDias.value.splice(i, 1)
+    else formDias.value = [...formDias.value, dia].sort((a, b) => a - b)
+  }
+
+  /* ——— Modal crear ——— */
+  function abrirModalCrear() {
+    formNombre.value = ''
+    formDescripcion.value = ''
+    formAreaId.value = null
+    formCapaId.value = null
+    formFrecuenciaId.value = null
+    formDias.value = []
   if (areaRequerida.value && opcionesArea.value.length === 1) {
     formAreaId.value = opcionesArea.value[0]?.id ?? null
   }
@@ -206,6 +222,7 @@ async function confirmarCrear() {
       area_id: formAreaId.value ?? null,
       capa_id: formCapaId.value ?? 0,
       frecuencia_id: formFrecuenciaId.value ?? 0,
+      dias_semana: [...formDias.value],
     })
     mostrarToast('ok', `Auditoría "${formNombre.value.trim()}" creada.`)
     modalCrearAbierto.value = false
@@ -217,16 +234,17 @@ async function confirmarCrear() {
 }
 
 /* ——— Modal editar ——— */
-function abrirModalEditar(a: Auditoria) {
-  auditoriaEditando.value = a
-  formNombre.value = a.nombre
-  formDescripcion.value = a.descripcion || ''
-  formAreaId.value = a.area_id
-  formCapaId.value = a.capa_id
-  formFrecuenciaId.value = a.frecuencia_id
-  formError.value = ''
-  modalEditarAbierto.value = true
-}
+  function abrirModalEditar(a: Auditoria) {
+    auditoriaEditando.value = a
+    formNombre.value = a.nombre
+    formDescripcion.value = a.descripcion || ''
+    formAreaId.value = a.area_id
+    formCapaId.value = a.capa_id
+    formFrecuenciaId.value = a.frecuencia_id
+    formDias.value = [...(a.dias_semana ?? [])].sort((x, y) => x - y)
+    formError.value = ''
+    modalEditarAbierto.value = true
+  }
 
 function cerrarModalEditar() {
   if (formGuardando.value) return
@@ -250,6 +268,7 @@ async function confirmarEditar() {
       area_id: formAreaId.value ?? undefined,
       capa_id: formCapaId.value ?? undefined,
       frecuencia_id: formFrecuenciaId.value ?? undefined,
+      dias_semana: [...formDias.value],
     })
     mostrarToast('ok', 'Auditoría actualizada.')
     modalEditarAbierto.value = false
@@ -636,6 +655,23 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <option v-for="f in opcionesFrecuencia" :key="f.id" :value="f.id">{{ f.nombre }}</option>
             </select>
           </label>
+          <div class="field">
+            <span>Días de la semana (opcional)</span>
+            <div class="dias-chips" role="group" aria-label="Días de la semana">
+              <button
+                v-for="d in DIAS_HABILES"
+                :key="d.valor"
+                type="button"
+                class="dia-chip"
+                :class="{ activo: formDias.includes(d.valor) }"
+                :aria-pressed="formDias.includes(d.valor)"
+                @click="toggleDia(d.valor)"
+              >
+                {{ d.etiqueta }}
+              </button>
+            </div>
+            <small class="field-hint">Sin selección: se habilita según la frecuencia.</small>
+          </div>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -694,6 +730,23 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
               <option v-for="f in opcionesFrecuencia" :key="f.id" :value="f.id">{{ f.nombre }}</option>
             </select>
           </label>
+          <div class="field">
+            <span>Días de la semana (opcional)</span>
+            <div class="dias-chips" role="group" aria-label="Días de la semana">
+              <button
+                v-for="d in DIAS_HABILES"
+                :key="d.valor"
+                type="button"
+                class="dia-chip"
+                :class="{ activo: formDias.includes(d.valor) }"
+                :aria-pressed="formDias.includes(d.valor)"
+                @click="toggleDia(d.valor)"
+              >
+                {{ d.etiqueta }}
+              </button>
+            </div>
+            <small class="field-hint">Sin selección: se habilita según la frecuencia.</small>
+          </div>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -1410,6 +1463,48 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .field select:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.dias-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dia-chip {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+
+.dia-chip:hover {
+  border-color: #94a3b8;
+}
+
+.dia-chip.activo {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.dia-chip:focus-visible {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
 .form-error {

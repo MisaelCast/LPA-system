@@ -6,6 +6,7 @@ from sqlmodel import Session, func, or_, select
 
 from app.models.area import Area
 from app.models.auditoria import Auditoria
+from app.models.auditoria_dia import dias_elegidos
 from app.models.capa import Capa
 from app.models.celula import Celula
 from app.models.criterio import Criterio
@@ -55,6 +56,23 @@ class EjecucionAbiertaError(ValueError):
 
 
 _NOMBRES_DIA = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+
+def _tooltip_habilita(auditoria: Auditoria, habilita: datetime | None) -> str | None:
+    """Mensaje «Se habilita el …» según los días de la auditoría."""
+    if habilita is None:
+        return None
+    if dias_elegidos(auditoria):
+        return (
+            f"Se habilita el {_NOMBRES_DIA[habilita.weekday()]} "
+            f"{habilita.strftime('%d/%m/%Y')}."
+        )
+    if auditoria.dia_semana is not None:
+        return (
+            f"Se habilita el {_NOMBRES_DIA[auditoria.dia_semana]} "
+            f"{habilita.strftime('%d/%m/%Y')}."
+        )
+    return f"Se habilita el {habilita.strftime('%d/%m/%Y')}."
 
 
 class EjecucionAuditoriaService:
@@ -412,13 +430,20 @@ class EjecucionAuditoriaService:
 
     def _validar_habilitacion(self, auditoria: Auditoria) -> None:
         """Rechaza iniciar una auditoría antes de su día habilitado (403)."""
-        if auditoria.dia_semana is None:
+        dias = dias_elegidos(auditoria)
+        if auditoria.dia_semana is None and not dias:
             return
         frecuencia = self._frecuencia_de(auditoria)
         habilita = fecha_habilita(auditoria, frecuencia, ahora_business())
         if habilita is not None and ahora_business() < habilita:
-            dias = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-            nombre_dia = dias[auditoria.dia_semana]
+            if dias:
+                nombres = ", ".join(_NOMBRES_DIA[d] for d in dias)
+                raise DiaNoHabilitadoError(
+                    f"Esta auditoría se habilita los {nombres} (dentro del "
+                    f"periodo de su frecuencia). "
+                    f"Se habilita el día {habilita.strftime('%d/%m/%Y')}."
+                )
+            nombre_dia = _NOMBRES_DIA[auditoria.dia_semana]
             raise DiaNoHabilitadoError(
                 f"Esta auditoría se habilita solo los {nombre_dia}. "
                 f"Se habilita el día {habilita.strftime('%d/%m/%Y')}."
@@ -811,16 +836,7 @@ class EjecucionAuditoriaService:
                 "contador": contador,
                 "dias": dias,
                 "accion": accion,
-                "tooltip": (
-                    (
-                        f"Se habilita el {_NOMBRES_DIA[auditoria.dia_semana]} "
-                        f"{habilita.strftime('%d/%m/%Y')}."
-                        if auditoria.dia_semana is not None
-                        else f"Se habilita el {habilita.strftime('%d/%m/%Y')}."
-                    )
-                    if habilita is not None
-                    else None
-                ),
+                "tooltip": _tooltip_habilita(auditoria, habilita),
                 "requiere_celula": getattr(auditoria, "requiere_celula", True),
             }
 
