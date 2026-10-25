@@ -92,6 +92,12 @@ const router = createRouter({
           component: () => import('@/views/ejecuciones/RevisarAuditoriasView.vue'),
           meta: { roles: ['Supervisor', 'Gerente', 'Administrador'] },
         },
+        {
+          path: 'hallazgos-auditores',
+          name: 'hallazgos-auditores',
+          component: () => import('@/views/hallazgos/HallazgosAuditoresView.vue'),
+          meta: { roles: ['Supervisor', 'Gerente', 'Administrador'] },
+        },
       ],
     },
   ],

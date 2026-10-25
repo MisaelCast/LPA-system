@@ -12,20 +12,11 @@ import {
   obtenerEjecucionDetalle,
   obtenerOpcionesFiltrosRevision,
 } from '@/services/ejecucion.service'
-import { listarHallazgos } from '@/services/hallazgo.service'
-import type { HallazgoDetallado, HallazgoFiltros } from '@/types/hallazgo'
 import PlanSemanal from '@/components/PlanSemanal.vue'
 
 const cargando = ref(false)
 const error = ref('')
 const ejecuciones = ref<EjecucionAuditoriaListItem[]>([])
-
-const tab = ref<'auditorias' | 'hallazgos'>('auditorias')
-const hallazgos = ref<HallazgoDetallado[]>([])
-const hallazgosCargando = ref(false)
-const filtroHallazgos = ref<
-  '' | 'atrasados' | 'sin_actualizar' | 'cierre_pendiente' | 'reincidencia'
->('')
 
 const areas = ref<Area[]>([])
 const celulas = ref<Celula[]>([])
@@ -48,37 +39,8 @@ const detalleCargando = ref(false)
 const detalle = ref<EjecucionAuditoriaDetalle | null>(null)
 
 onMounted(async () => {
-  await Promise.all([cargarOpciones(), cargar(), cargarHallazgos()])
+  await Promise.all([cargarOpciones(), cargar()])
 })
-
-async function cargarHallazgos() {
-  hallazgosCargando.value = true
-  try {
-    const filtros: HallazgoFiltros = { solo_auditores: true }
-    if (filtroHallazgos.value === 'atrasados') filtros.atrasados = true
-    if (filtroHallazgos.value === 'sin_actualizar') filtros.sin_actualizar = true
-    if (filtroHallazgos.value === 'cierre_pendiente') filtros.cierre_pendiente = true
-    if (filtroHallazgos.value === 'reincidencia') filtros.reincidencia = true
-    hallazgos.value = await listarHallazgos(filtros)
-  } catch {
-    hallazgos.value = []
-  } finally {
-    hallazgosCargando.value = false
-  }
-}
-
-function etiquetaTipoHallazgo(tipo: string): string {
-  if (tipo === 'R') return 'Mayor'
-  if (tipo === 'no_cumple') return 'No cumple'
-  return 'Menor'
-}
-
-function estadoLabelHallazgo(estado: string): string {
-  if (estado === 'en_correccion') return 'En corrección'
-  if (estado === 'cierre_solicitado') return 'Cierre solicitado'
-  if (estado === 'cerrado') return 'Cerrado'
-  return 'Abierto'
-}
 
 async function cargarOpciones() {
   try {
@@ -229,30 +191,12 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
     <header class="page-header">
       <div class="page-header-info">
         <h1>Revisión de auditorías</h1>
-        <p class="subtitle">Consulta las auditorías y los hallazgos de los auditores.</p>
+        <p class="subtitle">Consulta las auditorías realizadas por los auditores.</p>
       </div>
     </header>
 
     <PlanSemanal />
 
-    <div class="tabs">
-      <button
-        class="tab"
-        :class="{ 'tab--active': tab === 'auditorias' }"
-        @click="tab = 'auditorias'"
-      >
-        Auditorías
-      </button>
-      <button
-        class="tab"
-        :class="{ 'tab--active': tab === 'hallazgos' }"
-        @click="tab = 'hallazgos'"
-      >
-        Hallazgos de auditores
-      </button>
-    </div>
-
-    <div v-if="tab === 'auditorias'">
     <!-- Filtros -->
     <div class="filtros">
       <select v-model="fEstado" @change="cargar">
@@ -387,67 +331,6 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
           </tr>
         </tbody>
       </table>
-    </div>
-    </div>
-
-    <div v-else class="hallazgos-tab">
-      <div class="filtros-supervision">
-        <select v-model="filtroHallazgos" @change="cargarHallazgos">
-          <option value="">Todos los hallazgos</option>
-          <option value="atrasados">Atrasados (fuera de fecha límite)</option>
-          <option value="sin_actualizar">Sin actualizar (más de 2 días)</option>
-          <option value="cierre_pendiente">Cierre pendiente de aprobar</option>
-          <option value="reincidencia">Reincidencias (cierre rechazado)</option>
-        </select>
-      </div>
-
-      <div v-if="hallazgosCargando" class="msg msg-info">Cargando…</div>
-
-      <div v-else-if="hallazgos.length === 0" class="state state-empty">
-        <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M6 4v16M6 5h10l-1.8 3.5L16 12H6" />
-        </svg>
-        <h2>No hay hallazgos de auditores</h2>
-        <p>Los hallazgos detectados por los auditores a tu cargo aparecerán aquí.</p>
-      </div>
-
-      <div v-else class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Auditoría</th>
-              <th>Descripción</th>
-              <th>Tipo</th>
-              <th>Área responsable</th>
-              <th>Responsable</th>
-              <th>Fecha límite</th>
-              <th>Estado</th>
-              <th>Acción correctiva</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="h in hallazgos" :key="h.id" class="row">
-              <td class="col-fecha">{{ formatearFecha(h.fecha_creacion) }}</td>
-              <td class="col-auditoria">{{ h.auditoria_nombre }}</td>
-              <td>{{ h.descripcion }}</td>
-              <td>{{ etiquetaTipoHallazgo(h.tipo) }}</td>
-              <td>{{ h.area_responsable_nombre || '—' }}</td>
-              <td>{{ h.responsable_nombre || '—' }}</td>
-              <td class="col-fecha" :class="{ 'fecha-atrasada': h.atrasado }">
-                {{ formatearFecha(h.fecha_limite) }}
-                <span v-if="h.atrasado" class="tag-atrasado">atrasado</span>
-              </td>
-              <td>
-                <span class="badge" :class="'badge-' + h.estado">
-                  {{ estadoLabelHallazgo(h.estado) }}
-                </span>
-              </td>
-              <td class="col-accion">{{ h.accion_correctiva || '—' }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
     </div>
 
     <!-- Modal detalle (solo lectura) -->
@@ -589,81 +472,6 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
 </template>
 
 <style scoped>
-.tabs {
-  display: flex;
-  gap: 0.4rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--c-line, #e6e9ef);
-}
-
-.tab {
-  border: none;
-  background: transparent;
-  padding: 0.6rem 1rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--c-ink-3, #64748b);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  font-family: inherit;
-}
-
-.tab--active {
-  color: var(--c-primary, #2563eb);
-  border-bottom-color: var(--c-primary, #2563eb);
-}
-
-.badge-abierto {
-  background: var(--c-danger-soft, #fee2e2);
-  color: var(--c-danger-ink, #b91c1c);
-}
-
-.badge-en_correccion {
-  background: var(--c-warn-soft, #fef3c7);
-  color: var(--c-warn-ink, #92400e);
-}
-
-.badge-cierre_solicitado {
-  background: #ede9fe;
-  color: #6d28d9;
-}
-
-.badge-cerrado {
-  background: var(--c-ok-soft, #dcfce7);
-  color: var(--c-ok-ink, #166534);
-}
-
-.filtros-supervision {
-  margin-bottom: 1rem;
-}
-
-.filtros-supervision select {
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--c-line-2, #d5dae3);
-  border-radius: var(--r-md, 10px);
-  background: var(--c-surface, #fff);
-  font-size: 0.875rem;
-  color: var(--c-ink, #0f172a);
-}
-
-.fecha-atrasada {
-  color: var(--c-danger, #dc2626);
-  font-weight: 600;
-}
-
-.tag-atrasado {
-  display: inline-block;
-  margin-left: 0.35rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  background: var(--c-danger-soft, #fee2e2);
-  color: var(--c-danger-ink, #b91c1c);
-}
-
 .col-fecha {
   white-space: nowrap;
   color: var(--c-ink-3, #64748b);
@@ -672,11 +480,6 @@ const filasDetalle = computed<FilaDetalle[]>(() => {
 .col-auditoria {
   font-weight: 600;
   color: var(--c-ink, #0f172a);
-}
-
-.col-accion {
-  max-width: 260px;
-  color: var(--c-ink-2, #334155);
 }
 
 .resultado {

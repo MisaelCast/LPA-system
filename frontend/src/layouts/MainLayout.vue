@@ -72,6 +72,12 @@ const grupos = computed(() => [
         icon: 'review',
         visible: authStore.isSupervisor || authStore.isGerente,
       },
+      {
+        to: '/hallazgos-auditores',
+        label: 'Hallazgos de auditores',
+        icon: 'flag',
+        visible: authStore.isSupervisor || authStore.isGerente,
+      },
     ].filter((e) => e.visible),
   },
   {
