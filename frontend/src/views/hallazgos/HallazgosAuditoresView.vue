@@ -46,7 +46,7 @@ const hallazgoSeleccionado = ref<HallazgoDetallado | null>(null)
 const historial = ref<Seguimiento[]>([])
 const historialCargando = ref(false)
 const historialError = ref('')
-const btnCerrarDrawer = ref<HTMLButtonElement | null>(null)
+const btnCerrarDetalles = ref<HTMLButtonElement | null>(null)
 
 let focoPrevio: HTMLElement | null = null
 let overflowPrevio = ''
@@ -179,6 +179,20 @@ function textoLimite(h: HallazgoDetallado): string {
   return dias > 0 ? `${base} · ${dias} días de atraso` : `${base} · atrasado`
 }
 
+const alertasDetalle = computed(() => {
+  const h = hallazgoSeleccionado.value
+  if (!h || h.estado === 'cerrado') return []
+  const alertas: { texto: string; clase: string }[] = []
+  if ((h.dias_sin_actualizar ?? 0) > 0) {
+    alertas.push({
+      texto: `Sin actualizar ${h.dias_sin_actualizar} días`,
+      clase: 'chip--aviso',
+    })
+  }
+  if (h.reincidente) alertas.push({ texto: 'Reincidente', clase: 'chip--neutro' })
+  return alertas
+})
+
 function etiquetaSeguimiento(tipo: string): string {
   return SEGUIMIENTO_LABEL[tipo] ?? tipo
 }
@@ -192,7 +206,7 @@ function claseEvento(tipo: string): string {
   return 'neutro'
 }
 
-async function abrirHistorial(h: HallazgoDetallado) {
+async function abrirDetalles(h: HallazgoDetallado) {
   hallazgoSeleccionado.value = h
   drawerAbierto.value = true
   focoPrevio = document.activeElement as HTMLElement | null
@@ -202,7 +216,7 @@ async function abrirHistorial(h: HallazgoDetallado) {
   historialError.value = ''
   historialCargando.value = true
   await nextTick()
-  btnCerrarDrawer.value?.focus()
+  btnCerrarDetalles.value?.focus()
   await cargarHistorial(h.id)
 }
 
@@ -225,14 +239,14 @@ function reintentarHistorial() {
   if (hallazgoSeleccionado.value) cargarHistorial(hallazgoSeleccionado.value.id)
 }
 
-function cerrarHistorial() {
+function cerrarDetalles() {
   drawerAbierto.value = false
   document.body.style.overflow = overflowPrevio
   focoPrevio?.focus()
 }
 
 function alPresionarTecla(evento: KeyboardEvent) {
-  if (evento.key === 'Escape' && drawerAbierto.value) cerrarHistorial()
+  if (evento.key === 'Escape' && drawerAbierto.value) cerrarDetalles()
 }
 </script>
 
@@ -395,48 +409,6 @@ function alPresionarTecla(evento: KeyboardEvent) {
           </div>
 
           <p class="reg-descripcion">{{ h.descripcion }}</p>
-
-          <div class="reg-contexto">
-            <span v-if="h.area_responsable_nombre" class="reg-dato">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4 20V6l7-2v16M11 20V9l9 3v8M3 20h18"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              {{ h.area_responsable_nombre }}
-            </span>
-            <span v-if="h.responsable_nombre" class="reg-dato">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle
-                  cx="12"
-                  cy="8"
-                  r="3.4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                />
-                <path
-                  d="M5 20c.8-3.3 3.6-5.2 7-5.2s6.2 1.9 7 5.2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                />
-              </svg>
-              {{ h.responsable_nombre }}
-            </span>
-            <span v-if="h.celula_numero" class="reg-dato">
-              Célula {{ h.celula_numero }}
-            </span>
-            <span class="reg-dato reg-dato--tenue">
-              Registrado {{ fechaCorta(h.fecha_creacion) }}
-            </span>
-          </div>
         </div>
 
         <div class="reg-lateral">
@@ -468,42 +440,25 @@ function alPresionarTecla(evento: KeyboardEvent) {
             {{ textoLimite(h) }}
           </p>
 
-          <div class="reg-chips">
-            <span
-              v-if="
-                h.estado !== 'cerrado' && (h.dias_sin_actualizar ?? 0) > 0
-              "
-              class="chip chip--aviso"
-            >
-              Sin actualizar {{ h.dias_sin_actualizar }} d
-            </span>
-            <span
-              v-if="h.estado !== 'cerrado' && h.reincidente"
-              class="chip chip--neutro"
-            >
-              Reincidente
-            </span>
-          </div>
-
-          <button class="btn btn-sm reg-accion" type="button" @click="abrirHistorial(h)">
+          <button class="btn btn-sm reg-accion" type="button" @click="abrirDetalles(h)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
-                d="M3.8 12a8.2 8.2 0 1 0 2.4-5.8M3.8 4.6V10h5.4"
+                d="M2.6 12S6.2 5.7 12 5.7 21.4 12 21.4 12 17.8 18.3 12 18.3 2.6 12 2.6 12z"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.7"
-                stroke-linecap="round"
                 stroke-linejoin="round"
               />
-              <path
-                d="M12 8.2V12l2.5 2.5"
+              <circle
+                cx="12"
+                cy="12"
+                r="2.8"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.7"
-                stroke-linecap="round"
               />
             </svg>
-            Ver historial
+            Ver detalles
           </button>
         </div>
       </li>
@@ -514,27 +469,27 @@ function alPresionarTecla(evento: KeyboardEvent) {
         <div
           v-if="drawerAbierto"
           class="drawer-fondo"
-          @click.self="cerrarHistorial"
+          @click.self="cerrarDetalles"
         >
           <aside
             class="drawer"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="drawer-titulo"
+            aria-labelledby="detalles-titulo"
           >
             <header class="drawer-cabecera">
               <div>
-                <h2 id="drawer-titulo">Historial del hallazgo</h2>
+                <h2 id="detalles-titulo">Detalles del hallazgo</h2>
                 <p class="drawer-sub">
                   {{ hallazgoSeleccionado?.auditoria_nombre }}
                 </p>
               </div>
               <button
-                ref="btnCerrarDrawer"
+                ref="btnCerrarDetalles"
                 type="button"
                 class="drawer-cerrar"
-                aria-label="Cerrar historial"
-                @click="cerrarHistorial"
+                aria-label="Cerrar detalles"
+                @click="cerrarDetalles"
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path
@@ -575,6 +530,16 @@ function alPresionarTecla(evento: KeyboardEvent) {
                     <dd>{{ hallazgoSeleccionado.responsable_nombre || 'Sin asignar' }}</dd>
                   </div>
                   <div>
+                    <dt>Célula</dt>
+                    <dd>
+                      {{
+                        hallazgoSeleccionado.celula_numero
+                          ? `Célula ${hallazgoSeleccionado.celula_numero}`
+                          : '—'
+                      }}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Fecha límite</dt>
                     <dd
                       :class="{
@@ -591,6 +556,17 @@ function alPresionarTecla(evento: KeyboardEvent) {
                     <dd>{{ fechaCorta(hallazgoSeleccionado.fecha_creacion) }}</dd>
                   </div>
                 </dl>
+
+                <div v-if="alertasDetalle.length" class="resumen-alertas">
+                  <span
+                    v-for="alerta in alertasDetalle"
+                    :key="alerta.texto"
+                    class="chip"
+                    :class="alerta.clase"
+                  >
+                    {{ alerta.texto }}
+                  </span>
+                </div>
 
                 <div v-if="hallazgoSeleccionado.accion_correctiva" class="accion">
                   <h3>Acción correctiva</h3>
@@ -662,7 +638,7 @@ function alPresionarTecla(evento: KeyboardEvent) {
             </div>
 
             <footer class="drawer-pie">
-              <button class="btn-secondary" type="button" @click="cerrarHistorial">
+              <button class="btn-secondary" type="button" @click="cerrarDetalles">
                 Cerrar
               </button>
             </footer>
@@ -845,33 +821,6 @@ function alPresionarTecla(evento: KeyboardEvent) {
   overflow: hidden;
 }
 
-.reg-contexto {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem 1rem;
-  flex-wrap: wrap;
-  margin-top: 0.55rem;
-  font-size: var(--text-xs);
-  color: var(--c-ink-3);
-}
-
-.reg-dato {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.reg-dato svg {
-  width: 0.85rem;
-  height: 0.85rem;
-  flex-shrink: 0;
-  color: var(--c-ink-4);
-}
-
-.reg-dato--tenue {
-  color: var(--c-ink-3);
-}
-
 .reg-lateral {
   display: flex;
   flex-direction: column;
@@ -903,13 +852,6 @@ function alPresionarTecla(evento: KeyboardEvent) {
 
 .reg-limite--vencida svg {
   color: var(--c-danger);
-}
-
-.reg-chips {
-  display: flex;
-  gap: 0.3rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .chip {
@@ -1104,6 +1046,13 @@ function alPresionarTecla(evento: KeyboardEvent) {
   grid-template-columns: 1fr 1fr;
   gap: 0.7rem 1rem;
   margin: 0.95rem 0 0;
+}
+
+.resumen-alertas {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
 }
 
 .resumen-datos dt {
@@ -1353,10 +1302,6 @@ function alPresionarTecla(evento: KeyboardEvent) {
   .reg-lateral {
     align-items: flex-start;
     text-align: left;
-  }
-
-  .reg-chips {
-    justify-content: flex-start;
   }
 
   .reg-accion {
