@@ -416,6 +416,7 @@ function handleLogout() {
   border-radius: 0.5rem;
   background: var(--c-surface, #fff);
   color: var(--c-ink-3, #64748b);
+  cursor: pointer;
 }
 
 .header-logout:hover {
