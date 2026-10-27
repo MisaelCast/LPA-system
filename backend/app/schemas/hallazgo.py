@@ -25,12 +25,14 @@ class HallazgoCreateRequest(HallazgoBase):
 
     area_responsable_id: int | None = None
     responsable_id: int | None = None
+    fecha_limite: datetime | None = None
 
 
 class HallazgoCreate(HallazgoBase):
     respuesta_id: int
     area_responsable_id: int | None = None
     responsable_id: int | None = None
+    fecha_limite: datetime | None = None
 
 
 class HallazgoUpdate(SQLModel):

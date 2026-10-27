@@ -241,8 +241,10 @@ class HallazgoService:
 
         if responsable is not None:
             guardado.responsables = [responsable]
-            guardado.fecha_limite = datetime.now(timezone.utc) + timedelta(
-                days=settings.hallazgo_plazo_dias
+            guardado.fecha_limite = datos.fecha_limite or (
+                datetime.now(timezone.utc) + timedelta(
+                    days=settings.hallazgo_plazo_dias
+                )
             )
             self._registrar(
                 guardado,

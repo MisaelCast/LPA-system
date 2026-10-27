@@ -743,6 +743,57 @@ class TestHallazgoService:
         assert resultado.fecha_limite is not None
         self.mock_session.add.assert_called()
 
+    def test_crear_respeta_fecha_limite_indicada(self):
+        """Al enviar fecha_limite el hallazgo la conserva en lugar del plazo por defecto."""
+        area = _area()
+        responsable = _usuario(
+            id_=9, rol_nombre="Responsable de Manufactura"
+        )
+        responsable.nombre = "Responsable Prueba"
+        responsable.areas = [area]
+        respuesta = self._preparar_creacion(responsable, area)
+
+        creado = Hallazgo(
+            id=1,
+            descripcion="Detalle",
+            fecha_creacion=datetime.utcnow(),
+            respuesta_id=respuesta.id,
+        )
+        fecha_ind = datetime(2026, 12, 15, 0, 0, 0)
+
+        with patch.object(
+            type(self.service._respuesta_repo),
+            "obtener_por_id",
+            return_value=respuesta,
+        ):
+            with patch.object(
+                type(self.service._repo),
+                "obtener_por_respuesta",
+                return_value=None,
+            ):
+                with patch.object(
+                    type(self.service._repo),
+                    "crear",
+                    return_value=creado,
+                ):
+                    with patch.object(
+                        type(self.service._repo),
+                        "actualizar",
+                        side_effect=lambda h: h,
+                    ):
+                        resultado = self.service.crear(
+                            HallazgoCreate(
+                                descripcion="Detalle",
+                                respuesta_id=respuesta.id,
+                                area_responsable_id=1,
+                                responsable_id=9,
+                                fecha_limite=fecha_ind,
+                            ),
+                            self.usuario,
+                        )
+
+        assert resultado.fecha_limite == fecha_ind
+
     def test_crear_rechaza_responsable_de_otra_area(self):
         """No permite asignar un responsable que no pertenece al área."""
         area = _area()

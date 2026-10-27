@@ -65,6 +65,7 @@ export interface HallazgoCreate {
   descripcion: string
   area_responsable_id?: number | null
   responsable_id?: number | null
+  fecha_limite?: string | null
 }
 
 export interface HallazgoUpdate {

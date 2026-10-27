@@ -43,6 +43,7 @@ const responsablesCargando = ref(false)
 const responsablesError = ref('')
 
 const hallazgosInputs = ref<Record<number, string>>({})
+const hallazgosFechaLimite = ref<Record<number, string>>({})
 const hallazgosGuardando = ref<Record<number, boolean>>({})
 const hallazgosError = ref<Record<number, string>>({})
 const hallazgosFotos = ref<Record<number, Evidencia[]>>({})
@@ -55,6 +56,14 @@ const criterios = computed(() => ejecucion.value?.criterios || [])
 const tituloAuditoria = computed(() =>
   (ejecucion.value?.auditoria_nombre ?? '').replace(' - ', '\u00a0- '),
 )
+
+function hoyLocalISO(): string {
+  const d = new Date()
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${mes}-${dia}`
+}
+const fechaMinima = hoyLocalISO()
 const respondidos = computed(() =>
   criterios.value.filter((c) => c.respuesta_valor !== null).length,
 )
@@ -368,6 +377,7 @@ async function quitarHallazgo(criterio: CriterioRespuesta) {
     criterio.hallazgo_id = null
     criterio.hallazgo_descripcion = null
     delete hallazgosInputs.value[criterio.id]
+    delete hallazgosFechaLimite.value[criterio.id]
     delete hallazgosError.value[criterio.id]
     limpiarFotos(criterio.id)
   } catch (err) {
@@ -409,6 +419,12 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
       'Selecciona el responsable que atenderá el hallazgo.'
     return
   }
+  const fechaLimite = hallazgosFechaLimite.value[criterio.id] || null
+  if (fechaLimite && fechaLimite < fechaMinima) {
+    hallazgosError.value[criterio.id] =
+      'La fecha límite de corrección no puede ser anterior a hoy.'
+    return
+  }
   hallazgosGuardando.value[criterio.id] = true
   hallazgosError.value[criterio.id] = 'Guardando respuesta, espera un momento…'
   try {
@@ -432,6 +448,7 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
         descripcion,
         area_responsable_id: ejecucion.value?.area_id ?? null,
         responsable_id: responsableId.value,
+        fecha_limite: fechaLimite,
       })
       crit.hallazgo_id = creado.id
       crit.hallazgo_descripcion = creado.descripcion
@@ -781,6 +798,19 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                   placeholder="Describe el hallazgo detectado..."
                   :disabled="soloLectura"
                 ></textarea>
+                <label
+                  v-if="fila.criterio.hallazgo_id === null && !esCumplimiento()"
+                  class="hallazgo-fecha"
+                >
+                  <span>Fecha límite de corrección</span>
+                  <input
+                    v-model="hallazgosFechaLimite[fila.criterio.id]"
+                    type="date"
+                    class="input"
+                    :min="fechaMinima"
+                    :disabled="soloLectura"
+                  />
+                </label>
                 <div class="hallazgo-fotos">
                   <button
                     type="button"
@@ -1426,6 +1456,24 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 }
 
 .hallazgo-area select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hallazgo-fecha {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+}
+
+.hallazgo-fecha span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--c-ink-2, #334155);
+}
+
+.hallazgo-fecha input {
   width: 100%;
   box-sizing: border-box;
 }

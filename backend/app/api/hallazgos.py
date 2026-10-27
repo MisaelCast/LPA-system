@@ -119,6 +119,7 @@ def crear_hallazgo(
         respuesta_id=respuesta_id,
         area_responsable_id=datos.area_responsable_id,
         responsable_id=datos.responsable_id,
+        fecha_limite=datos.fecha_limite,
     )
     service = HallazgoService(session)
     try:
