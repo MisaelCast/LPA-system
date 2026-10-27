@@ -52,6 +52,9 @@ const inputFotos = ref<HTMLInputElement | null>(null)
 const criterioFotosActivo = ref<CriterioRespuesta | null>(null)
 
 const criterios = computed(() => ejecucion.value?.criterios || [])
+const tituloAuditoria = computed(() =>
+  (ejecucion.value?.auditoria_nombre ?? '').replace(' - ', '\u00a0- '),
+)
 const respondidos = computed(() =>
   criterios.value.filter((c) => c.respuesta_valor !== null).length,
 )
@@ -605,18 +608,84 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
     <!-- Paso 3: Checklist -->
     <div v-if="paso === 'ejecutando' && ejecucion" class="ejecucion">
-      <div class="ejecucion-header">
-        <div class="ejecucion-head-row">
-          <h2>{{ ejecucion.auditoria_nombre }}</h2>
-          <span v-if="finalizada" class="estado-final">FINALIZADA</span>
-          <span v-else-if="noElaborada" class="estado-no-elaborada">NO ELABORADA</span>
-          <span v-else-if="esPendiente" class="estado-pendiente">PENDIENTE</span>
+      <header
+        class="audit-docket"
+        :class="{ 'audit-docket--sticky': !esPendiente }"
+      >
+        <div class="docket-main">
+          <div class="docket-id">
+            <div class="docket-title-row">
+              <h2 class="docket-title">{{ tituloAuditoria }}</h2>
+              <span
+                v-if="finalizada"
+                class="docket-status docket-status--final"
+              >
+                <span class="status-dot" aria-hidden="true"></span>Finalizada
+              </span>
+              <span
+                v-else-if="noElaborada"
+                class="docket-status docket-status--muted"
+              >
+                <span class="status-dot" aria-hidden="true"></span>No elaborada
+              </span>
+              <span
+                v-else-if="esPendiente"
+                class="docket-status docket-status--pending"
+              >
+                <span class="status-dot" aria-hidden="true"></span>Pendiente
+              </span>
+            </div>
+            <div class="docket-meta">
+              <span v-if="ejecucion.celula_numero" class="docket-meta-item">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M3.5 9h17M9 3.5v17" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                </svg>
+                Célula {{ ejecucion.celula_numero }}
+              </span>
+              <span v-if="ejecucion.area_nombre" class="docket-meta-item">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 20.5V9.5l5 3v-3l5 3v-4l6 4v8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                  <path d="M4 20.5h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+                {{ ejecucion.area_nombre }}
+              </span>
+              <span class="docket-meta-item">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="8.2" r="3.3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                  <path d="M5.4 20c0-3.5 2.9-5.9 6.6-5.9s6.6 2.4 6.6 5.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+                {{ ejecucion.auditor_nombre }}
+              </span>
+            </div>
+          </div>
+
+          <div v-if="!esPendiente" class="docket-progress">
+            <div class="docket-progress-head">
+              <span class="docket-progress-label">Progreso</span>
+              <span class="docket-progress-value" data-num>
+                <strong>{{ respondidos }}</strong><span>/{{ total }}</span>
+              </span>
+            </div>
+            <div
+              class="docket-track"
+              role="progressbar"
+              :aria-valuenow="respondidos"
+              aria-valuemin="0"
+              :aria-valuemax="total"
+              :aria-label="`${respondidos} de ${total} criterios respondidos`"
+            >
+              <span
+                v-for="criterio in criterios"
+                :key="'seg-' + criterio.id"
+                class="docket-seg"
+                :class="{ 'is-done': criterio.respuesta_valor !== null }"
+                :title="`Criterio ${criterio.orden}: ${criterio.respuesta_valor !== null ? 'respondido' : 'pendiente'}`"
+              ></span>
+            </div>
+          </div>
         </div>
-        <div class="ejecucion-meta">
-          <span v-if="ejecucion.celula_numero">Célula {{ ejecucion.celula_numero }}</span>
-          <span v-if="ejecucion.area_nombre">· {{ ejecucion.area_nombre }}</span>
-          <span>· {{ ejecucion.auditor_nombre }}</span>
-        </div>
+
         <div v-if="esPendiente" class="pendiente-aviso">
           <p>
             Esta es una auditoría programada. Iníciala para responder los criterios.
@@ -629,20 +698,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
             {{ cargando ? 'Iniciando…' : 'Iniciar auditoría' }}
           </button>
         </div>
-      </div>
-
-      <div v-if="!esPendiente" class="progreso">
-        <div class="progreso-info">
-          <span class="progreso-label">Progreso</span>
-          <span class="progreso-num" data-num>{{ respondidos }}/{{ total }}</span>
-        </div>
-        <div class="progreso-barra">
-          <div
-            class="progreso-relleno"
-            :style="{ transform: 'scaleX(' + (total > 0 ? respondidos / total : 0) + ')' }"
-          ></div>
-        </div>
-      </div>
+      </header>
 
       <div class="criterios">
         <template
@@ -918,53 +974,172 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 }
 
 /* --- Encabezado de ejecución --- */
-.ejecucion-header {
-  background: var(--c-surface-2, #f8fafc);
+.audit-docket {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.15rem;
+  background: var(--c-surface, #fff);
   border: 1px solid var(--c-line, #e6e9ef);
   border-radius: var(--r-lg, 14px);
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.25rem;
 }
 
-.ejecucion-head-row {
+.audit-docket--sticky {
+  position: sticky;
+  top: 3.8rem;
+  z-index: 30;
+}
+
+.docket-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 1.5rem;
 }
 
-.ejecucion-header h2 {
-  font-size: var(--text-lg, 1.0625rem);
+.docket-id {
+  flex: 1;
+  min-width: 0;
 }
 
-.estado-final {
-  color: var(--c-danger, #dc2626);
-  font-weight: 800;
-  font-size: 0.75rem;
+.docket-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.docket-title {
+  font-size: var(--text-2xl, 1.625rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--c-ink, #0f172a);
+  text-wrap: balance;
+}
+
+.docket-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--r-pill, 999px);
+  font-size: 0.66rem;
+  font-weight: 700;
   letter-spacing: 0.05em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.estado-pendiente {
-  color: var(--c-warn, #d97706);
-  font-weight: 800;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
+.docket-status--final {
+  color: var(--c-ok-ink, #166534);
+  background: var(--c-ok-soft, #dcfce7);
 }
 
-.estado-no-elaborada {
+.docket-status--pending {
+  color: var(--c-warn-ink, #92400e);
+  background: var(--c-warn-soft, #fef3c7);
+}
+
+.docket-status--muted {
   color: var(--c-ink-3, #64748b);
+  background: var(--c-surface-3, #f1f5f9);
+}
+
+.status-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.docket-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  margin-top: 0.45rem;
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.8rem;
+}
+
+.docket-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.docket-meta-item svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--c-ink-4, #94a3b8);
+}
+
+.docket-progress {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.docket-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.docket-progress-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-ink-3, #64748b);
+}
+
+.docket-progress-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-ink-3, #64748b);
+}
+
+.docket-progress-value strong {
+  font-size: 1.35rem;
   font-weight: 800;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--c-ink, #0f172a);
+}
+
+.docket-progress-value span {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.docket-track {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+
+.docket-seg {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--c-line, #e6e9ef);
+  transition: background-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+
+.docket-seg.is-done {
+  background: var(--c-primary, #2563eb);
+}
+
+.docket-seg.is-done:hover {
+  transform: scaleY(1.25);
 }
 
 .pendiente-aviso {
-  margin-top: 0.9rem;
   padding: 0.75rem 0.95rem;
   border-radius: var(--r-md, 10px);
   background: var(--c-warn-soft, #fef3c7);
@@ -982,58 +1157,29 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   color: var(--c-warn-ink, #92400e);
 }
 
-.ejecucion-meta {
-  color: var(--c-ink-3, #64748b);
-  font-size: 0.84rem;
-  margin-top: 0.3rem;
-}
+@media (max-width: 720px) {
+  .audit-docket {
+    padding: 0.85rem 0.9rem;
+  }
 
-.progreso {
-  position: sticky;
-  top: 4rem;
-  z-index: 30;
-  margin: 0 0 1rem;
-  padding: 0.7rem 0.9rem;
-  background: var(--c-surface, #fff);
-  border: 1px solid var(--c-line, #e6e9ef);
-  border-radius: var(--r-md, 10px);
-  box-shadow: var(--sh-md, 0 2px 6px rgba(15, 23, 42, 0.06));
-}
+  .docket-main {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.8rem;
+  }
 
-.progreso-info {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 0.4rem;
-}
+  .docket-title {
+    font-size: var(--text-lg, 1.0625rem);
+  }
 
-.progreso-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--c-ink-3, #64748b);
-}
+  .docket-meta {
+    gap: 0.3rem 0.8rem;
+    font-size: 0.76rem;
+  }
 
-.progreso-num {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--c-ink-2, #334155);
-}
-
-.progreso-barra {
-  height: 8px;
-  background: var(--c-line, #e6e9ef);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progreso-relleno {
-  height: 100%;
-  background: var(--c-primary, #2563eb);
-  border-radius: 999px;
-  transform-origin: left;
-  transition: transform 0.3s var(--ease);
+  .docket-progress {
+    width: 100%;
+  }
 }
 
 /* --- Checklist --- */
@@ -1225,19 +1371,6 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   padding: 0.8rem;
   border-radius: var(--r-md, 10px);
   border: 1px solid var(--c-line, #e6e9ef);
-  border-left: 3px solid var(--c-line-3, #cbd5e1);
-  background: var(--c-surface, #fff);
-}
-
-.criterio-hallazgo.amarillo {
-  border-color: var(--c-line, #e6e9ef);
-  border-left-color: var(--c-warn, #d97706);
-  background: var(--c-surface, #fff);
-}
-
-.criterio-hallazgo.rojo {
-  border-color: var(--c-line, #e6e9ef);
-  border-left-color: var(--c-danger, #dc2626);
   background: var(--c-surface, #fff);
 }
 
@@ -1248,15 +1381,35 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 }
 
 .criterio-hallazgo label strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--c-ink, #0f172a);
+}
+
+.criterio-hallazgo label strong::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--c-ink-4, #94a3b8);
 }
 
 .criterio-hallazgo.amarillo label strong {
   color: var(--c-warn-ink, #92400e);
 }
 
+.criterio-hallazgo.amarillo label strong::before {
+  background: var(--c-warn, #d97706);
+}
+
 .criterio-hallazgo.rojo label strong {
   color: var(--c-danger-ink, #b91c1c);
+}
+
+.criterio-hallazgo.rojo label strong::before {
+  background: var(--c-danger, #dc2626);
 }
 
 .hallazgo-area {
@@ -1513,5 +1666,15 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 .resumen-total {
   font-weight: 700;
   color: var(--c-ink, #0f172a);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docket-seg {
+    transition: none;
+  }
+
+  .docket-seg.is-done:hover {
+    transform: none;
+  }
 }
 </style>
