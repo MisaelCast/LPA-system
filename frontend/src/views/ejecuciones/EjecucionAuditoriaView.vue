@@ -516,6 +516,13 @@ function etiquetaHallazgo(valor: string | null): string {
     : 'Hallazgo mayor / grave'
 }
 
+function tieneFotos(criterioId: number): boolean {
+  return (
+    (hallazgosFotos.value[criterioId]?.length ?? 0) > 0 ||
+    (fotosPendientes.value[criterioId]?.length ?? 0) > 0
+  )
+}
+
 function mostrarBadgeHallazgoPendiente(criterio: CriterioRespuesta): boolean {
   return (
     mostrarCampoHallazgo(criterio) && criterio.hallazgo_id === null
@@ -729,17 +736,31 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                 <div class="hallazgo-fotos">
                   <button
                     type="button"
-                    class="btn small ghost"
+                    class="foto-add"
                     :disabled="soloLectura || fotosSubiendo[fila.criterio.id]"
                     @click="abrirSelectorFotos(fila.criterio)"
                   >
-                    {{ fotosSubiendo[fila.criterio.id] ? 'Subiendo…' : 'Agregar foto' }}
+                    <span class="foto-add-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M4 8.5h3.2l1.4-2h6.8l1.4 2H20v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                        <circle cx="12" cy="13.2" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                      </svg>
+                    </span>
+                    <span class="foto-add-text">
+                      <strong>
+                        {{
+                          fotosSubiendo[fila.criterio.id]
+                            ? 'Subiendo…'
+                            : tieneFotos(fila.criterio.id)
+                              ? 'Agregar otra foto'
+                              : 'Agregar foto'
+                        }}
+                      </strong>
+                      <small>JPG, PNG o WEBP · máx. 5 MB</small>
+                    </span>
                   </button>
                   <div
-                    v-if="
-                      (hallazgosFotos[fila.criterio.id]?.length ?? 0) > 0 ||
-                      (fotosPendientes[fila.criterio.id]?.length ?? 0) > 0
-                    "
+                    v-if="tieneFotos(fila.criterio.id)"
                     class="fotos-grid"
                   >
                     <div
@@ -1204,17 +1225,20 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   padding: 0.8rem;
   border-radius: var(--r-md, 10px);
   border: 1px solid var(--c-line, #e6e9ef);
-  background: var(--c-surface-2, #f8fafc);
+  border-left: 3px solid var(--c-line-3, #cbd5e1);
+  background: var(--c-surface, #fff);
 }
 
 .criterio-hallazgo.amarillo {
-  border-color: #fcd34d;
-  background: var(--c-warn-soft, #fef3c7);
+  border-color: var(--c-line, #e6e9ef);
+  border-left-color: var(--c-warn, #d97706);
+  background: var(--c-surface, #fff);
 }
 
 .criterio-hallazgo.rojo {
-  border-color: #fca5a5;
-  background: var(--c-danger-soft, #fee2e2);
+  border-color: var(--c-line, #e6e9ef);
+  border-left-color: var(--c-danger, #dc2626);
+  background: var(--c-surface, #fff);
 }
 
 .criterio-hallazgo label {
@@ -1225,6 +1249,14 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
 .criterio-hallazgo label strong {
   color: var(--c-ink, #0f172a);
+}
+
+.criterio-hallazgo.amarillo label strong {
+  color: var(--c-warn-ink, #92400e);
+}
+
+.criterio-hallazgo.rojo label strong {
+  color: var(--c-danger-ink, #b91c1c);
 }
 
 .hallazgo-area {
@@ -1288,20 +1320,76 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   flex-wrap: wrap;
 }
 
-.btn.ghost {
-  background: transparent;
-  border: 1px dashed var(--c-line, #cbd5e1);
-  color: var(--c-ink-2, #334155);
-}
-
-.btn.ghost:hover:not(:disabled) {
-  border-style: solid;
-  border-color: var(--c-ink-2, #334155);
-}
-
 /* --- Fotos de evidencia --- */
 .hallazgo-fotos {
   margin-top: 0.6rem;
+}
+
+.foto-add {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px dashed var(--c-line-2, #d5dae3);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  color: var(--c-ink-2, #334155);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.foto-add:hover:not(:disabled) {
+  border-color: var(--c-primary, #2563eb);
+  background: var(--c-primary-soft, #eef2ff);
+}
+
+.foto-add:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.foto-add-icon {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--c-surface-3, #f1f5f9);
+  color: var(--c-ink-3, #64748b);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.foto-add:hover:not(:disabled) .foto-add-icon {
+  background: var(--c-primary, #2563eb);
+  color: #fff;
+}
+
+.foto-add-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.foto-add-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.foto-add-text strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--c-ink-2, #334155);
+}
+
+.foto-add-text small {
+  font-size: 0.7rem;
+  color: var(--c-ink-3, #64748b);
 }
 
 .fotos-grid {
