@@ -540,15 +540,6 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
 <template>
   <div class="page">
-    <header class="page-header">
-      <div class="page-header-info">
-        <h1>Ejecutar Auditoría</h1>
-        <p class="subtitle">
-          Selecciona la auditoría y la célula, responde cada criterio y registra los hallazgos.
-        </p>
-      </div>
-    </header>
-
     <div v-if="error" class="msg error">{{ error }}</div>
     <div v-if="exito" class="msg success">{{ exito }}</div>
 
@@ -638,17 +629,18 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
             {{ cargando ? 'Iniciando…' : 'Iniciar auditoría' }}
           </button>
         </div>
-        <div v-else class="progreso">
-          <div class="progreso-info">
-            <span class="progreso-label">Progreso</span>
-            <span class="progreso-num" data-num>{{ respondidos }}/{{ total }}</span>
-          </div>
-          <div class="progreso-barra">
-            <div
-              class="progreso-relleno"
-              :style="{ transform: 'scaleX(' + (total > 0 ? respondidos / total : 0) + ')' }"
-            ></div>
-          </div>
+      </div>
+
+      <div v-if="!esPendiente" class="progreso">
+        <div class="progreso-info">
+          <span class="progreso-label">Progreso</span>
+          <span class="progreso-num" data-num>{{ respondidos }}/{{ total }}</span>
+        </div>
+        <div class="progreso-barra">
+          <div
+            class="progreso-relleno"
+            :style="{ transform: 'scaleX(' + (total > 0 ? respondidos / total : 0) + ')' }"
+          ></div>
         </div>
       </div>
 
@@ -997,7 +989,15 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 }
 
 .progreso {
-  margin-top: 0.9rem;
+  position: sticky;
+  top: 4rem;
+  z-index: 30;
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--c-surface, #fff);
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-md, 10px);
+  box-shadow: var(--sh-md, 0 2px 6px rgba(15, 23, 42, 0.06));
 }
 
 .progreso-info {
