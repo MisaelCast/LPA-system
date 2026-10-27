@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import type { Area } from '@/types/area'
 import type {
   EstadoHallazgo,
   HallazgoDetallado,
-  HallazgoFiltros,
   Seguimiento,
 } from '@/types/hallazgo'
 import {
@@ -14,17 +12,15 @@ import {
   solicitarCierre,
   subirEvidencia,
 } from '@/services/hallazgo.service'
-import { obtenerAreasActivas } from '@/services/area.service'
 
 const cargando = ref(false)
 const error = ref('')
 const exito = ref('')
 const tickets = ref<HallazgoDetallado[]>([])
-const areas = ref<Area[]>([])
 
-const fEstado = ref<'' | EstadoHallazgo>('')
+type Vista = 'pendientes' | 'historial'
+const vista = ref<Vista>('pendientes')
 const fAreaId = ref<number | null>(null)
-const fAtrasados = ref(false)
 
 const detalleAbierto = ref(false)
 const seleccionado = ref<HallazgoDetallado | null>(null)
@@ -44,12 +40,57 @@ const estados: { valor: EstadoHallazgo; label: string }[] = [
   { valor: 'cerrado', label: 'Cerrado' },
 ]
 
-const totales = computed(() => ({
-  abierto: tickets.value.filter((t) => t.estado === 'abierto').length,
-  en_correccion: tickets.value.filter((t) => t.estado === 'en_correccion').length,
-  cierre_solicitado: tickets.value.filter((t) => t.estado === 'cierre_solicitado').length,
-  atrasados: tickets.value.filter((t) => t.atrasado).length,
-}))
+const ticketsPendientes = computed(() =>
+  tickets.value.filter((t) => t.estado !== 'cerrado'),
+)
+const ticketsCerrados = computed(() =>
+  tickets.value.filter((t) => t.estado === 'cerrado'),
+)
+const atrasadosPendientes = computed(
+  () => ticketsPendientes.value.filter((t) => t.atrasado).length,
+)
+
+const areasAsignadas = computed(() => {
+  const mapa = new Map<number, string>()
+  for (const t of tickets.value) {
+    if (t.area_responsable_id != null && t.area_responsable_nombre) {
+      mapa.set(t.area_responsable_id, t.area_responsable_nombre)
+    }
+  }
+  return [...mapa.entries()]
+    .map(([id, nombre]) => ({ id, nombre }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+})
+
+const ticketsVisibles = computed(() => {
+  const base =
+    vista.value === 'historial' ? ticketsCerrados.value : ticketsPendientes.value
+  const filtrados =
+    fAreaId.value != null
+      ? base.filter((t) => t.area_responsable_id === fAreaId.value)
+      : base
+  return [...filtrados].sort(ordenarTickets)
+})
+
+const tituloVacio = computed(() => {
+  if (tickets.value.length === 0) return 'Sin hallazgos asignados'
+  if (fAreaId.value != null) return 'Sin hallazgos en esta área'
+  if (vista.value === 'historial') return 'Aún no hay hallazgos cerrados'
+  return 'No tienes hallazgos pendientes'
+})
+
+const detalleVacio = computed(() => {
+  if (tickets.value.length === 0) {
+    return 'Cuando un auditor te asigne un hallazgo aparecerá aquí.'
+  }
+  if (fAreaId.value != null) {
+    return 'Prueba con otra área o quita el filtro.'
+  }
+  if (vista.value === 'historial') {
+    return 'Los hallazgos cerrados se guardarán en este historial.'
+  }
+  return 'Tus hallazgos asignados están al día.'
+})
 
 const puedeAvanzar = computed(() => {
   const t = seleccionado.value
@@ -59,27 +100,13 @@ const puedeSolicitarCierre = computed(
   () => seleccionado.value?.estado === 'en_correccion',
 )
 
-onMounted(async () => {
-  await Promise.all([cargarAreas(), cargar()])
-})
-
-async function cargarAreas() {
-  try {
-    areas.value = await obtenerAreasActivas()
-  } catch {
-    areas.value = []
-  }
-}
+onMounted(cargar)
 
 async function cargar() {
   cargando.value = true
   error.value = ''
   try {
-    const filtros: HallazgoFiltros = { solo_asignados: true }
-    if (fEstado.value) filtros.estado = fEstado.value
-    if (fAreaId.value) filtros.area_responsable_id = fAreaId.value
-    if (fAtrasados.value) filtros.atrasados = true
-    tickets.value = await listarHallazgos(filtros)
+    tickets.value = await listarHallazgos({ solo_asignados: true })
   } catch (err) {
     error.value = mensajeError(err, 'Error al cargar tus tickets.')
   } finally {
@@ -87,11 +114,86 @@ async function cargar() {
   }
 }
 
-function limpiarFiltros() {
-  fEstado.value = ''
-  fAreaId.value = null
-  fAtrasados.value = false
-  cargar()
+const PESO_ESTADO: Record<EstadoHallazgo, number> = {
+  abierto: 0,
+  en_correccion: 1,
+  cierre_solicitado: 2,
+  cerrado: 3,
+}
+
+function msFecha(iso: string | null | undefined): number {
+  if (!iso) return Number.POSITIVE_INFINITY
+  const valor = new Date(iso).getTime()
+  return Number.isNaN(valor) ? Number.POSITIVE_INFINITY : valor
+}
+
+function ordenarTickets(a: HallazgoDetallado, b: HallazgoDetallado): number {
+  if (vista.value === 'historial') {
+    return (
+      msFecha(b.fecha_cierre ?? b.fecha_creacion) -
+      msFecha(a.fecha_cierre ?? a.fecha_creacion)
+    )
+  }
+  const atraso = Number(b.atrasado) - Number(a.atrasado)
+  if (atraso !== 0) return atraso
+  const estado = PESO_ESTADO[a.estado] - PESO_ESTADO[b.estado]
+  if (estado !== 0) return estado
+  const limiteA = msFecha(a.fecha_limite)
+  const limiteB = msFecha(b.fecha_limite)
+  if (limiteA !== limiteB) return limiteA - limiteB
+  return msFecha(b.fecha_creacion) - msFecha(a.fecha_creacion)
+}
+
+function fechaCorta(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const fecha = new Date(iso)
+  if (Number.isNaN(fecha.getTime())) return ''
+  return fecha.toLocaleDateString('es-MX', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function textoPlazo(t: HallazgoDetallado): string {
+  if (t.estado === 'cerrado') {
+    return t.fecha_cierre ? `Cerrado ${fechaCorta(t.fecha_cierre)}` : 'Cerrado'
+  }
+  if (!t.fecha_limite) return 'Sin fecha límite'
+  const limite = new Date(t.fecha_limite)
+  if (Number.isNaN(limite.getTime())) return 'Sin fecha límite'
+
+  const hoy = new Date()
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+  const inicioLimite = new Date(
+    limite.getFullYear(),
+    limite.getMonth(),
+    limite.getDate(),
+  )
+  const dias = Math.round(
+    (inicioHoy.getTime() - inicioLimite.getTime()) / 86_400_000,
+  )
+
+  if (t.atrasado) {
+    const vencidos = Math.max(1, dias)
+    return vencidos === 1
+      ? 'Vencido hace 1 día'
+      : `Vencido hace ${vencidos} días`
+  }
+  if (dias === 0) return 'Vence hoy'
+  if (dias === -1) return 'Vence mañana'
+  return `Vence ${fechaCorta(t.fecha_limite)}`
+}
+
+function etiquetaAccion(t: HallazgoDetallado): string {
+  return t.estado === 'abierto' || t.estado === 'en_correccion'
+    ? 'Atender'
+    : 'Ver'
+}
+
+function mostrarArea(t: HallazgoDetallado): boolean {
+  const area = t.area_responsable_nombre
+  if (!area) return false
+  return !t.auditoria_nombre.toLowerCase().includes(area.toLowerCase())
 }
 
 function mensajeError(err: unknown, porDefecto: string): string {
@@ -254,123 +356,179 @@ async function onFotoSeleccionada(event: Event) {
       <div class="page-header-info">
         <h1>Hallazgos asignados</h1>
         <p class="subtitle">
-          Hallazgos asignados a tu área. Registra la corrección y solicita el cierre.
+          Revisa primero lo vencido. Registra la corrección y solicita el cierre.
         </p>
       </div>
     </header>
 
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-label">Abiertos</span>
-        <span class="stat-value stat-abierto">{{ totales.abierto }}</span>
+    <div class="barra">
+      <div class="vistas" role="tablist" aria-label="Vista de hallazgos">
+        <button
+          type="button"
+          role="tab"
+          class="vista"
+          :class="{ 'vista--activa': vista === 'pendientes' }"
+          :aria-selected="vista === 'pendientes'"
+          @click="vista = 'pendientes'"
+        >
+          Pendientes
+          <span class="vista-count">{{ ticketsPendientes.length }}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="vista"
+          :class="{ 'vista--activa': vista === 'historial' }"
+          :aria-selected="vista === 'historial'"
+          @click="vista = 'historial'"
+        >
+          Historial
+          <span class="vista-count">{{ ticketsCerrados.length }}</span>
+        </button>
       </div>
-      <div class="stat">
-        <span class="stat-label">En corrección</span>
-        <span class="stat-value stat-proceso">{{ totales.en_correccion }}</span>
+
+      <div class="barra-meta">
+        <span v-if="atrasadosPendientes > 0" class="aviso-vencidos">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M12 7.5V12l3 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+          {{ atrasadosPendientes }} vencido{{ atrasadosPendientes === 1 ? '' : 's' }}
+        </span>
+
+        <select
+          v-if="areasAsignadas.length > 1"
+          v-model.number="fAreaId"
+          class="area-select"
+          aria-label="Filtrar por área"
+        >
+          <option :value="null">Todas las áreas</option>
+          <option v-for="a in areasAsignadas" :key="a.id" :value="a.id">
+            {{ a.nombre }}
+          </option>
+        </select>
       </div>
-      <div class="stat">
-        <span class="stat-label">Cierre solicitado</span>
-        <span class="stat-value stat-cierre">{{ totales.cierre_solicitado }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Atrasados</span>
-        <span class="stat-value stat-atrasado">{{ totales.atrasados }}</span>
-      </div>
-    </div>
-
-    <div class="filtros">
-      <select v-model="fEstado" @change="cargar">
-        <option value="">Estado: todos</option>
-        <option v-for="e in estados" :key="e.valor" :value="e.valor">
-          {{ e.label }}
-        </option>
-      </select>
-
-      <select v-model.number="fAreaId" @change="cargar">
-        <option :value="null">Área: todas</option>
-        <option v-for="a in areas" :key="a.id" :value="a.id">
-          {{ a.nombre }}
-        </option>
-      </select>
-
-      <label class="chk">
-        <input v-model="fAtrasados" type="checkbox" @change="cargar" />
-        Solo atrasados
-      </label>
-
-      <button class="btn-secondary" @click="limpiarFiltros">Limpiar</button>
     </div>
 
     <p v-if="error && !detalleAbierto" class="msg msg-err">{{ error }}</p>
 
-    <div v-if="cargando" class="msg msg-info">Cargando…</div>
-
-    <div v-else-if="tickets.length === 0" class="state state-empty">
-      <h2>Sin tickets asignados</h2>
-      <p>Cuando un auditor te asigne un hallazgo aparecerá aquí.</p>
+    <div v-if="cargando" class="ticket-list" aria-hidden="true">
+      <div v-for="n in 3" :key="n" class="ticket-skel">
+        <span class="ticket-skel-badge"></span>
+        <div class="ticket-skel-body">
+          <span class="ticket-skel-line ticket-skel-line--desc"></span>
+          <span class="ticket-skel-line ticket-skel-line--meta"></span>
+        </div>
+      </div>
     </div>
 
-    <div v-else class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Auditoría</th>
-            <th>Descripción</th>
-            <th>Área</th>
-            <th>Fecha límite</th>
-            <th>Estado</th>
-            <th class="col-acciones">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="t in tickets" :key="t.id" class="row" @click="abrirDetalle(t)">
-            <td class="col-fecha">{{ formatearFecha(t.fecha_creacion) }}</td>
-            <td class="col-auditoria">{{ t.auditoria_nombre }}</td>
-            <td class="col-desc">{{ t.descripcion }}</td>
-            <td>{{ t.area_responsable_nombre || '—' }}</td>
-            <td class="col-fecha" :class="{ 'fecha-atrasada': t.atrasado }">
-              {{ formatearFecha(t.fecha_limite) }}
-              <span v-if="t.atrasado" class="tag-atrasado">atrasado</span>
-            </td>
-            <td>
-              <span class="badge" :class="'badge-' + t.estado">
-                {{ etiquetaEstado(t.estado) }}
-              </span>
-            </td>
-            <td class="col-acciones">
-              <button class="btn btn-sm" @click.stop="abrirDetalle(t)">Ver</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else-if="ticketsVisibles.length === 0" class="state state-empty">
+      <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <template v-if="tickets.length === 0">
+          <path d="M6 4v16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M6 5h10l-1.8 3.5L16 12H6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        </template>
+        <template v-else>
+          <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8.2 12.4l2.6 2.6 5-5.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </template>
+      </svg>
+      <h2>{{ tituloVacio }}</h2>
+      <p>{{ detalleVacio }}</p>
     </div>
+
+    <template v-else>
+      <div class="lista-head">
+        <h2>
+          {{ vista === 'pendientes' ? 'Prioridad de atención' : 'Hallazgos cerrados' }}
+        </h2>
+        <span>
+          {{ vista === 'pendientes' ? 'Ordenados por vencimiento y estado' : 'Más recientes primero' }}
+        </span>
+      </div>
+
+      <div class="ticket-list">
+        <button
+          v-for="t in ticketsVisibles"
+          :key="t.id"
+          type="button"
+          class="ticket"
+          :class="{ 'ticket--vencido': t.atrasado && t.estado !== 'cerrado' }"
+          @click="abrirDetalle(t)"
+        >
+          <span class="ticket-status">
+            <span class="badge" :class="'badge-' + t.estado">
+              {{ etiquetaEstado(t.estado) }}
+            </span>
+            <span v-if="t.reincidente" class="ticket-tag">Reincidente</span>
+          </span>
+
+          <span class="ticket-body">
+            <span class="ticket-desc">{{ t.descripcion }}</span>
+            <span class="ticket-context">
+              <span class="ticket-auditoria">{{ t.auditoria_nombre }}</span>
+              <template v-if="mostrarArea(t)">
+                <span class="ticket-sep" aria-hidden="true">·</span>
+                {{ t.area_responsable_nombre }}
+              </template>
+              <template v-if="t.celula_numero">
+                <span class="ticket-sep" aria-hidden="true">·</span>
+                Célula {{ t.celula_numero }}
+              </template>
+            </span>
+          </span>
+
+          <span class="ticket-side">
+            <span
+              class="ticket-plazo"
+              :class="{ 'ticket-plazo--vencido': t.atrasado && t.estado !== 'cerrado' }"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/>
+                <path d="M12 7.5V12l3 1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+              </svg>
+              {{ textoPlazo(t) }}
+            </span>
+            <span class="ticket-accion">
+              {{ etiquetaAccion(t) }}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+          </span>
+        </button>
+      </div>
+    </template>
 
     <!-- Modal detalle -->
     <div v-if="detalleAbierto && seleccionado" class="modal-backdrop" @click.self="cerrarDetalle">
       <div class="modal detalle-modal" role="dialog" aria-label="Detalle del ticket">
-        <header class="modal-header">
-          <h2>Ticket #{{ seleccionado.id }}</h2>
-          <button class="modal-close" @click="cerrarDetalle" aria-label="Cerrar">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </header>
-
-        <div class="modal-body">
-          <div class="detalle-encabezado">
+        <header class="modal-header detalle-header">
+          <div class="detalle-titulo-row">
+            <h2>{{ seleccionado.descripcion }}</h2>
+            <button class="modal-close" @click="cerrarDetalle" aria-label="Cerrar">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="detalle-sub">
             <span class="badge badge-lg" :class="'badge-' + seleccionado.estado">
               {{ etiquetaEstado(seleccionado.estado) }}
             </span>
             <span v-if="seleccionado.atrasado" class="tag-atrasado">atrasado</span>
             <span v-if="seleccionado.reincidente" class="tag-reincidente">reincidente</span>
+            <span class="detalle-ticket">Ticket #{{ seleccionado.id }}</span>
+            <span class="detalle-sep" aria-hidden="true">·</span>
+            <span class="detalle-auditoria">{{ seleccionado.auditoria_nombre }}</span>
           </div>
+        </header>
 
+        <div class="modal-body">
           <dl class="detalle-grid">
-            <div class="dato">
-              <dt>Auditoría</dt>
-              <dd>{{ seleccionado.auditoria_nombre }}</dd>
+            <div class="dato dato--full">
+              <dt>Criterio</dt>
+              <dd>{{ seleccionado.criterio_orden }}. {{ seleccionado.criterio_descripcion }}</dd>
             </div>
             <div class="dato">
               <dt>Área responsable</dt>
@@ -378,23 +536,15 @@ async function onFotoSeleccionada(event: Event) {
             </div>
             <div class="dato">
               <dt>Fecha límite</dt>
-              <dd>{{ formatearFecha(seleccionado.fecha_limite) }}</dd>
+              <dd :class="{ 'fecha-atrasada': seleccionado.atrasado }">
+                {{ formatearFecha(seleccionado.fecha_limite) }}
+              </dd>
             </div>
             <div class="dato">
               <dt>Registrado</dt>
               <dd>{{ formatearFecha(seleccionado.fecha_creacion) }}</dd>
             </div>
           </dl>
-
-          <section class="bloque">
-            <h4>Descripción del hallazgo</h4>
-            <p>{{ seleccionado.descripcion }}</p>
-          </section>
-
-          <section class="bloque">
-            <h4>Criterio</h4>
-            <p>{{ seleccionado.criterio_orden }}. {{ seleccionado.criterio_descripcion }}</p>
-          </section>
 
           <section class="bloque">
             <h4>Evidencia original</h4>
@@ -517,93 +667,311 @@ async function onFotoSeleccionada(event: Event) {
 </template>
 
 <style scoped>
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-}
-
-.stat {
-  background: var(--c-surface, #fff);
-  border: 1px solid var(--c-line, #e6e9ef);
-  border-radius: var(--r-md, 10px);
-  padding: 0.85rem 1rem;
+/* --- Barra de vistas --- */
+.barra {
   display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  box-shadow: var(--sh-sm, 0 1px 2px rgba(15, 23, 42, 0.05));
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--c-ink-3, #64748b);
-  font-weight: 600;
-}
-
-.stat-value {
-  font-size: 1.6rem;
-  font-weight: 800;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-abierto {
-  color: var(--c-warn, #d97706);
-}
-
-.stat-proceso {
-  color: var(--c-primary, #2563eb);
-}
-
-.stat-cierre {
-  color: var(--c-primary-active, #1e40af);
-}
-
-.stat-atrasado {
-  color: var(--c-danger, #dc2626);
-}
-
-.filtros {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
   align-items: center;
-  margin-bottom: 1.1rem;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
 }
 
-.filtros select {
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--c-line-2, #d5dae3);
+.vistas {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
   border-radius: var(--r-md, 10px);
-  background: var(--c-surface, #fff);
-  font-size: 0.875rem;
-  color: var(--c-ink, #0f172a);
+  background: var(--c-surface-3, #f1f5f9);
 }
 
-.chk {
+.vista {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--c-ink-3, #64748b);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.vista:hover {
   color: var(--c-ink-2, #334155);
 }
 
-.col-fecha {
+.vista--activa {
+  background: var(--c-surface, #fff);
+  color: var(--c-ink, #0f172a);
+  box-shadow: var(--sh-sm, 0 1px 2px rgba(15, 23, 42, 0.05));
+}
+
+.vista-count {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--r-pill, 999px);
+  background: var(--c-surface-3, #f1f5f9);
+  color: var(--c-ink-3, #64748b);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.vista--activa .vista-count {
+  background: var(--c-primary-soft, #eef2ff);
+  color: var(--c-primary-active, #1e40af);
+}
+
+.barra-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.aviso-vencidos {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--c-danger-ink, #b91c1c);
   white-space: nowrap;
+}
+
+.aviso-vencidos svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.area-select {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--c-line-2, #d5dae3);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  color: var(--c-ink, #0f172a);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+/* --- Lista de tickets --- */
+.lista-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.lista-head h2 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--c-ink-2, #334155);
+}
+
+.lista-head span {
+  font-size: 0.72rem;
   color: var(--c-ink-3, #64748b);
 }
 
-.col-auditoria {
+.ticket-list {
+  background: var(--c-surface, #fff);
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-lg, 14px);
+  overflow: hidden;
+}
+
+.ticket {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: none;
+  border-bottom: 1px solid var(--c-line, #e6e9ef);
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+
+.ticket:last-child {
+  border-bottom: none;
+}
+
+.ticket:hover {
+  background: var(--c-surface-2, #f8fafc);
+}
+
+.ticket:focus-visible {
+  outline: 2px solid var(--c-primary, #2563eb);
+  outline-offset: -2px;
+}
+
+.ticket-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.ticket-tag {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-warn-ink, #92400e);
+}
+
+.ticket-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.ticket-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.86rem;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--c-ink, #0f172a);
 }
 
-.col-desc {
-  max-width: 300px;
+.ticket-context {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.74rem;
+  color: var(--c-ink-3, #64748b);
+}
+
+.ticket-auditoria {
   color: var(--c-ink-2, #334155);
+}
+
+.ticket-sep {
+  margin: 0 0.3rem;
+  color: var(--c-ink-4, #94a3b8);
+}
+
+.ticket-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.ticket-plazo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--c-ink-3, #64748b);
+}
+
+.ticket-plazo svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.ticket-plazo--vencido {
+  color: var(--c-danger-ink, #b91c1c);
+}
+
+.ticket-accion {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--c-ink-3, #64748b);
+  transition: color 0.15s var(--ease);
+}
+
+.ticket-accion svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.ticket:hover .ticket-accion,
+.ticket:focus-visible .ticket-accion {
+  color: var(--c-primary, #2563eb);
+}
+
+/* --- Carga --- */
+.ticket-skel {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--c-line, #e6e9ef);
+}
+
+.ticket-skel:last-child {
+  border-bottom: none;
+}
+
+.ticket-skel-badge,
+.ticket-skel-line {
+  display: block;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    var(--c-surface-3, #f1f5f9) 25%,
+    var(--c-line, #e6e9ef) 37%,
+    var(--c-surface-3, #f1f5f9) 63%
+  );
+  background-size: 400% 100%;
+  animation: ticket-shimmer 1.4s ease infinite;
+}
+
+.ticket-skel-badge {
+  width: 4.5rem;
+  height: 1.2rem;
+}
+
+.ticket-skel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ticket-skel-line--desc {
+  width: 60%;
+  height: 0.8rem;
+}
+
+.ticket-skel-line--meta {
+  width: 38%;
+  height: 0.65rem;
+}
+
+@keyframes ticket-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
 }
 
 .fecha-atrasada {
@@ -661,20 +1029,58 @@ async function onFotoSeleccionada(event: Event) {
   width: min(720px, calc(100% - 2rem));
 }
 
-.detalle-encabezado {
+.detalle-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.detalle-titulo-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.detalle-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--c-ink, #0f172a);
+}
+
+.detalle-sub {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--c-line, #e6e9ef);
+}
+
+.detalle-ticket {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--c-ink-3, #64748b);
+}
+
+.detalle-sep {
+  color: var(--c-ink-4, #94a3b8);
+}
+
+.detalle-auditoria {
+  font-size: 0.78rem;
+  color: var(--c-ink-3, #64748b);
 }
 
 .detalle-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.9rem 1.5rem;
-  margin: 1.1rem 0;
+  margin: 0;
+}
+
+.dato--full {
+  grid-column: 1 / -1;
 }
 
 .dato {
@@ -798,11 +1204,6 @@ async function onFotoSeleccionada(event: Event) {
   color: var(--c-ink-2, #334155);
 }
 
-.btn-sm {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.82rem;
-}
-
 .aviso-lectura {
   margin: 1.25rem 0 0;
   padding: 0.7rem 0.9rem;
@@ -823,13 +1224,24 @@ async function onFotoSeleccionada(event: Event) {
 }
 
 .timeline-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  padding: 0.5rem 0.7rem;
-  border-left: 3px solid var(--c-line-2, #d5dae3);
-  background: var(--c-surface-3, #f8fafc);
-  border-radius: 0 var(--r-md, 10px) var(--r-md, 10px) 0;
+  padding: 0.5rem 0.7rem 0.5rem 1.5rem;
+  background: var(--c-surface-2, #f8fafc);
+  border-radius: var(--r-sm, 8px);
+}
+
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  top: 0.8rem;
+  left: 0.7rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: var(--c-ink-4, #94a3b8);
 }
 
 .timeline-tipo {
@@ -848,9 +1260,70 @@ async function onFotoSeleccionada(event: Event) {
   color: var(--c-ink-2, #334155);
 }
 
+@media (max-width: 720px) {
+  .barra {
+    align-items: stretch;
+  }
+
+  .vistas {
+    width: 100%;
+  }
+
+  .vista {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .barra-meta {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .area-select {
+    width: 100%;
+  }
+
+  .ticket {
+    grid-template-columns: 1fr;
+    gap: 0.6rem;
+    padding: 0.85rem 0.9rem;
+  }
+
+  .ticket-status {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .ticket-desc {
+    -webkit-line-clamp: 3;
+  }
+
+  .ticket-side {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--c-line, #e6e9ef);
+  }
+}
+
 @media (max-width: 560px) {
   .detalle-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detalle-header h2 {
+    font-size: 0.98rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-skel-badge,
+  .ticket-skel-line {
+    animation: none;
   }
 }
 </style>
