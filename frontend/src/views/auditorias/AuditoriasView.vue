@@ -13,7 +13,7 @@ const authStore = useAuthStore()
 
 const permisos = ref<PermisosGestionAuditorias | null>(null)
 
-const busqueda = ref('')
+const areasExpandidas = ref<Set<string>>(new Set())
 const auditoriasExpandidas = ref<Set<number>>(new Set())
 
 const modalCrearAbierto = ref(false)
@@ -93,15 +93,9 @@ function puedeGestionarAuditoria(a: Auditoria): boolean {
   return true
 }
 
-const auditoriasFiltradas = computed(() => {
-  const q = busqueda.value.trim().toLowerCase()
-  if (!q) return auditoriaStore.auditorias
-  return auditoriaStore.auditorias.filter((a) => a.nombre.toLowerCase().includes(q))
-})
-
 const auditoriasPorArea = computed(() => {
   const grupos = new Map<string, Auditoria[]>()
-  for (const a of auditoriasFiltradas.value) {
+  for (const a of auditoriaStore.auditorias) {
     const clave = a.area_nombre?.trim() || 'Sin área'
     const lista = grupos.get(clave)
     if (lista) {
@@ -122,17 +116,23 @@ const auditoriasPorArea = computed(() => {
     })
 })
 
-const totalAreas = computed(() => auditoriasPorArea.value.length)
-
-const totalAuditorias = computed(() => auditoriaStore.auditorias.length)
-const auditoriasActivas = computed(() => auditoriaStore.auditorias.filter((a) => a.activa).length)
-const totalCriterios = computed(() => {
-  let total = 0
-  for (const lista of Object.values(criterioStore.criteriosPorAuditoria)) {
-    total += lista.length
+function toggleArea(nombre: string) {
+  const next = new Set(areasExpandidas.value)
+  if (next.has(nombre)) {
+    next.delete(nombre)
+  } else {
+    next.add(nombre)
   }
-  return total
-})
+  areasExpandidas.value = next
+}
+
+function areaExpandida(nombre: string): boolean {
+  return areasExpandidas.value.has(nombre)
+}
+
+function activasDeArea(grupo: { auditorias: Auditoria[] }): number {
+  return grupo.auditorias.filter((a) => a.activa).length
+}
 
 function toggleExpand(auditoriaId: number) {
   const next = new Set(auditoriasExpandidas.value)
@@ -389,46 +389,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       </button>
     </header>
 
-    <!-- Stats -->
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-label">Auditorías totales</span>
-        <span class="stat-value">{{ totalAuditorias }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Auditorías activas</span>
-        <span class="stat-value stat-active">{{ auditoriasActivas }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Áreas</span>
-        <span class="stat-value">{{ totalAreas }}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Criterios totales</span>
-        <span class="stat-value">{{ totalCriterios }}</span>
-      </div>
-    </div>
-
-    <!-- Búsqueda -->
-    <div class="toolbar">
-      <div class="search">
-        <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6" fill="none"/>
-          <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-        </svg>
-        <input
-          v-model="busqueda"
-          type="search"
-          placeholder="Buscar auditoría por nombre…"
-        />
-        <button v-if="busqueda" class="search-clear" @click="busqueda = ''" title="Limpiar" aria-label="Limpiar búsqueda">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-
     <!-- Cargando -->
     <div v-if="auditoriaStore.cargando" class="state state-loading">
       <div class="spinner"></div>
@@ -452,34 +412,43 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       </button>
     </div>
 
-    <!-- Sin resultados -->
-    <div v-else-if="auditoriasFiltradas.length === 0" class="state state-empty">
-      <svg class="state-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8" fill="none"/>
-        <path d="M15.5 15.5L20 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-      </svg>
-      <h2>Sin resultados</h2>
-      <p>No hay auditorías que coincidan con «{{ busqueda }}».</p>
-      <button class="btn-secondary" @click="busqueda = ''">
-        Limpiar búsqueda
-      </button>
-    </div>
-
     <!-- Lista de auditorías, agrupadas por área -->
     <div v-else class="auditorias-list">
       <section
         v-for="grupo in auditoriasPorArea"
         :key="grupo.nombre"
         class="area-group"
+        :class="{ 'area-group--open': areaExpandida(grupo.nombre) }"
       >
-        <header class="area-group-header">
-          <h2>{{ grupo.nombre }}</h2>
+        <button
+          type="button"
+          class="area-group-header"
+          :aria-expanded="areaExpandida(grupo.nombre)"
+          :aria-controls="`area-body-${grupo.nombre}`"
+          @click="toggleArea(grupo.nombre)"
+        >
+          <svg
+            class="chevron area-chevron"
+            :class="{ 'chevron--open': areaExpandida(grupo.nombre) }"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path d="M5 3l6 5-6 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="area-group-name">{{ grupo.nombre }}</span>
           <span class="area-group-count">
             {{ grupo.auditorias.length }} {{ grupo.auditorias.length === 1 ? 'auditoría' : 'auditorías' }}
           </span>
-        </header>
+          <span v-if="activasDeArea(grupo) > 0" class="area-group-activas">
+            {{ activasDeArea(grupo) }} activa{{ activasDeArea(grupo) === 1 ? '' : 's' }}
+          </span>
+        </button>
 
-        <div class="area-group-items">
+        <div
+          v-show="areaExpandida(grupo.nombre)"
+          :id="`area-body-${grupo.nombre}`"
+          class="area-group-items"
+        >
           <article
             v-for="a in grupo.auditorias"
             :key="a.id"
@@ -785,104 +754,6 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 <style scoped>
 /* --- Header --- */
 
-/* --- Stats --- */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-}
-
-.stat {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.6rem;
-  padding: 0.85rem 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  font-weight: 600;
-}
-
-.stat-value {
-  font-size: 1.65rem;
-  font-weight: 700;
-  color: #0f172a;
-  line-height: 1.1;
-}
-
-.stat-active {
-  color: #16a34a;
-}
-
-/* --- Toolbar --- */
-.toolbar {
-  margin-bottom: 1rem;
-}
-
-.search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.5rem;
-  padding: 0 0.75rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.search:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.search-icon {
-  color: #94a3b8;
-  margin-right: 0.5rem;
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-}
-
-.search input {
-  flex: 1;
-  border: none;
-  padding: 0.6rem 0;
-  font-size: 0.9rem;
-  outline: none;
-  background: transparent;
-  color: #0f172a;
-}
-
-.search-clear {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 0.35rem;
-  border-radius: 0.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.search-clear svg {
-  width: 0.85rem;
-  height: 0.85rem;
-}
-
-.search-clear:hover {
-  color: #475569;
-}
-
 /* --- Estados --- */
 .state {
   background: #fff;
@@ -936,69 +807,140 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .auditorias-list {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 0.85rem;
 }
 
 .area-group {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   min-width: 0;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.area-group--open {
+  border-color: var(--c-line-2);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
 }
 
 .area-group-header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding-bottom: 0.15rem;
-  border-bottom: 2px solid #e2e8f0;
+  gap: 0.65rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0.95rem 1.15rem;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background 0.12s;
 }
 
-.area-group-header h2 {
-  margin: 0;
+.area-group-header:hover {
+  background: var(--c-surface-2);
+}
+
+.area-group-header:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+  border-radius: 0.75rem;
+}
+
+.area-chevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--c-ink-4);
+  flex-shrink: 0;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s;
+}
+
+.area-chevron.chevron--open {
+  transform: rotate(90deg);
+  color: var(--c-primary);
+}
+
+.area-group-name {
   font-size: 0.82rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #1d4ed8;
+  color: var(--c-primary-hover);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .area-group-count {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #475569;
-  background: #f1f5f9;
+  color: var(--c-ink-2);
+  background: var(--c-surface-3);
   border-radius: 999px;
   padding: 0.12rem 0.55rem;
+  flex-shrink: 0;
+}
+
+.area-group-activas {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--c-ok-ink);
+  background: var(--c-ok-soft);
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .area-group-items {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  padding: 0 0.65rem 0.65rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .area-chevron {
+    transition: none;
+  }
 }
 
 .auditoria-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.6rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  transition: border-color 0.15s, box-shadow 0.15s;
-  overflow: hidden;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--c-line);
+  border-radius: 0;
+  box-shadow: none;
+  transition: background 0.12s;
+  overflow: visible;
+}
+
+.area-group-items .auditoria-card:first-child {
+  border-top: none;
 }
 
 .auditoria-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  background: var(--c-surface-2);
+  box-shadow: none;
 }
 
 .auditoria-card--expanded {
-  border-color: #93c5fd;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.08);
+  background: var(--c-surface-2);
+  box-shadow: none;
 }
 
 .auditoria-card--inactive {
-  background: #f8fafc;
+  background: transparent;
+}
+
+.auditoria-card--inactive .auditoria-card-title h3 {
+  color: var(--c-ink-3);
 }
 
 .auditoria-card-header {
@@ -1008,7 +950,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   width: 100%;
   background: transparent;
   border: none;
-  padding: 0.85rem 1.1rem;
+  padding: 0.8rem 0.5rem;
   cursor: pointer;
   text-align: left;
   font: inherit;
@@ -1017,12 +959,13 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .auditoria-card-header:hover {
-  background: #f8fafc;
+  background: transparent;
 }
 
 .auditoria-card-header:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--c-primary);
   outline-offset: -2px;
+  border-radius: 0.4rem;
 }
 
 .auditoria-card-title {
@@ -1036,14 +979,14 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .chevron {
   width: 0.95rem;
   height: 0.95rem;
-  color: #94a3b8;
+  color: var(--c-ink-4);
   flex-shrink: 0;
-  transition: transform 0.18s ease, color 0.15s;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), color 0.15s;
 }
 
 .chevron--open {
   transform: rotate(90deg);
-  color: #1d4ed8;
+  color: var(--c-primary);
 }
 
 .auditoria-card-title h3 {
@@ -1067,7 +1010,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
-  padding: 0 1.1rem 0.85rem;
+  padding: 0 0.5rem 0.75rem 2.05rem;
 }
 
 .meta-badge {
@@ -1078,19 +1021,19 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 .meta-text {
   font-size: 0.78rem;
-  color: #64748b;
+  color: var(--c-ink-3);
 }
 
 .auditoria-card-body {
-  border-top: 1px solid #f1f5f9;
-  padding: 0.75rem 1.1rem 1rem;
-  background: #fafbfc;
+  border-top: 1px solid var(--c-line);
+  padding: 0.75rem 0.5rem 1rem 2.05rem;
+  background: transparent;
 }
 
 .criterios-header {
   font-size: 0.75rem;
   font-weight: 600;
-  color: #64748b;
+  color: var(--c-ink-3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 0.5rem;
