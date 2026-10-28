@@ -83,7 +83,7 @@ const grupos = computed(() => [
   {
     titulo: 'ADMINISTRACIÓN',
     items: [
-      { to: '/usuarios', label: 'Usuarios', icon: 'users', visible: authStore.isAdmin },
+      { to: '/usuarios', label: 'Usuarios', icon: 'users', visible: authStore.isAdmin || authStore.isSupervisor || authStore.isGerente },
       { to: '/areas', label: 'Áreas', icon: 'areas', visible: authStore.isAdmin },
       { to: '/capas', label: 'Capas', icon: 'layers', visible: authStore.isAdmin },
       { to: '/auditorias', label: 'Auditorías', icon: 'clipboard', visible: authStore.isAdmin || authStore.isSupervisor || authStore.isGerente },

@@ -15,7 +15,7 @@ router = APIRouter(tags=["roles"])
 @router.get("/roles", response_model=list[RolRead])
 def listar_roles(
     session: Session = Depends(get_session),
-    _: Usuario = Depends(require_roles("Administrador")),
+    _: Usuario = Depends(require_roles("Administrador", "Supervisor", "Gerente")),
 ) -> list[Rol]:
     """Lista los roles asignables al crear/editar usuarios.
 

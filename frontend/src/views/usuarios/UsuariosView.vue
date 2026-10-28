@@ -15,6 +15,16 @@ import type { Rol } from '@/types/rol'
 const store = useUsuariosStore()
 const authStore = useAuthStore()
 
+const puedeGestionar = computed(
+  () => authStore.isAdmin || authStore.isSupervisor || authStore.isGerente,
+)
+
+const rolesDisponibles = computed(() =>
+  authStore.isSupervisor
+    ? roles.value.filter((r) => r.nombre === 'Auditor')
+    : roles.value,
+)
+
 const roles = ref<Rol[]>([])
 const asignacionOpciones = ref<AsignacionOpciones | null>(null)
 const busqueda = ref('')
@@ -320,7 +330,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
         <p class="subtitle">Gestión de usuarios y sus roles en el sistema.</p>
       </div>
       <button
-        v-if="authStore.isAdmin"
+        v-if="puedeGestionar"
         class="btn-primary"
         @click="abrirModalCrear"
       >
@@ -400,7 +410,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       <h2>Aún no hay usuarios</h2>
       <p>Comienza creando el primer usuario del sistema.</p>
       <button
-        v-if="authStore.isAdmin"
+        v-if="puedeGestionar"
         class="btn-primary"
         @click="abrirModalCrear"
       >
@@ -449,7 +459,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             <span class="usuario-correo">{{ u.correo }}</span>
           </div>
           <div
-            v-if="authStore.isAdmin && u.rol_nombre !== 'Administrador'"
+            v-if="puedeGestionar && u.rol_nombre !== 'Administrador'"
             class="usuario-card-actions"
           >
             <button
@@ -545,7 +555,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             <span>Rol</span>
             <select v-model.number="formRolId">
               <option :value="0" disabled>Seleccione</option>
-              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+              <option v-for="r in rolesDisponibles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
             </select>
           </label>
           <div v-if="esRolAsignable" class="asignacion-section">
@@ -651,7 +661,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           <label class="field">
             <span>Rol</span>
             <select v-model.number="formRolId">
-              <option v-for="r in roles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
+              <option v-for="r in rolesDisponibles" :key="r.id" :value="r.id">{{ r.nombre }}</option>
             </select>
           </label>
           <div v-if="esRolAsignable" class="asignacion-section">

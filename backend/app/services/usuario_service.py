@@ -177,6 +177,47 @@ class UsuarioService:
         rol = self._session.get(Rol, usuario.rol_id)
         return rol.nombre if rol else ""
 
+    def puede_gestionar(self, actor: Usuario, objetivo: Usuario) -> bool:
+        """Indica si ``actor`` puede ver y administrar a ``objetivo``.
+
+        - Administrador: gestiona a todos.
+        - Gerente: gestiona a todos salvo Administradores.
+        - Supervisor: gestiona únicamente a los Auditores.
+        """
+        actor_rol = self._rol_nombre(actor)
+        objetivo_rol = self._rol_nombre(objetivo)
+        if actor_rol == "Administrador":
+            return True
+        if actor_rol == "Gerente":
+            return objetivo_rol != "Administrador"
+        if actor_rol == "Supervisor":
+            return objetivo_rol == "Auditor"
+        return False
+
+    def puede_crear_rol(self, actor: Usuario, rol_id: int) -> bool:
+        """Indica si ``actor`` puede crear/editar usuarios con ``rol_id``.
+
+        El rol Administrador nunca es asignable; un Supervisor solo puede
+        crear Auditores.
+        """
+        rol = self._session.get(Rol, rol_id)
+        if rol is None or rol.nombre == "Administrador":
+            return False
+        actor_rol = self._rol_nombre(actor)
+        if actor_rol in ("Administrador", "Gerente"):
+            return True
+        if actor_rol == "Supervisor":
+            return rol.nombre == "Auditor"
+        return False
+
+    def listar_visibles(
+        self, actor: Usuario, skip: int = 0, limit: int = 100
+    ) -> list[Usuario]:
+        """Lista únicamente los usuarios que ``actor`` puede gestionar."""
+        todos = self._repo.listar(0, 1000)
+        visibles = [u for u in todos if self.puede_gestionar(actor, u)]
+        return visibles[skip : skip + limit]
+
     def asignar(
         self,
         usuario_id: int,
