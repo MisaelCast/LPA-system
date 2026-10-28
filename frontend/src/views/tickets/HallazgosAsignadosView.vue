@@ -32,6 +32,12 @@ const subiendo = ref(false)
 const formAccion = ref('')
 const formComentario = ref('')
 const inputFoto = ref<HTMLInputElement | null>(null)
+const inputCamara = ref<HTMLInputElement | null>(null)
+const chooserFotoAbierto = ref(false)
+const esTactil =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(pointer: coarse)').matches
 
 const estados: { valor: EstadoHallazgo; label: string }[] = [
   { valor: 'abierto', label: 'Abierto' },
@@ -314,6 +320,20 @@ async function solicitarCierreTicket() {
 }
 
 function abrirSelectorFoto() {
+  if (esTactil) {
+    chooserFotoAbierto.value = true
+    return
+  }
+  inputFoto.value?.click()
+}
+
+function elegirCamara() {
+  chooserFotoAbierto.value = false
+  inputCamara.value?.click()
+}
+
+function elegirGaleria() {
+  chooserFotoAbierto.value = false
   inputFoto.value?.click()
 }
 
@@ -600,6 +620,51 @@ async function onFotoSeleccionada(event: Event) {
               hidden
               @change="onFotoSeleccionada"
             />
+            <input
+              ref="inputCamara"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              hidden
+              @change="onFotoSeleccionada"
+            />
+            <div
+              v-if="chooserFotoAbierto"
+              class="modal-backdrop"
+              @click.self="chooserFotoAbierto = false"
+            >
+              <div class="modal foto-chooser" role="dialog" aria-label="Elegir origen de la foto">
+                <header class="modal-header">
+                  <h2>Agregar foto</h2>
+                  <button
+                    class="modal-close"
+                    @click="chooserFotoAbierto = false"
+                    aria-label="Cerrar"
+                  >
+                    <svg viewBox="0 0 16 16">
+                      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </header>
+                <div class="modal-body foto-chooser-body">
+                  <button type="button" class="foto-chooser-op" @click="elegirCamara">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 8.5h3.2l1.4-2h6.8l1.4 2H20v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                      <circle cx="12" cy="13.2" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                    </svg>
+                    <span>Tomar foto</span>
+                  </button>
+                  <button type="button" class="foto-chooser-op" @click="elegirGaleria">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                      <circle cx="9" cy="10" r="1.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
+                      <path d="M4 17l4.5-4.5 3.5 3L15.5 11 20 15.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span>Galería</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
 
           <section v-if="puedeAvanzar" class="seguimiento-form">
@@ -1156,6 +1221,42 @@ async function onFotoSeleccionada(event: Event) {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.foto-chooser-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.foto-chooser-op {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--c-line, #e6e9ef);
+  border-radius: var(--r-md, 10px);
+  background: var(--c-surface, #fff);
+  color: var(--c-ink-2, #334155);
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.foto-chooser-op:hover {
+  border-color: var(--c-primary, #2563eb);
+  background: var(--c-primary-soft, #eef2ff);
+}
+
+.foto-chooser-op svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  color: var(--c-primary, #2563eb);
 }
 
 .seguimiento-form {
