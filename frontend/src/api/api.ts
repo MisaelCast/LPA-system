@@ -2,10 +2,28 @@ import axios, { AxiosError } from 'axios'
 import type { AxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import type { Token } from '@/types/auth'
+import { esErrorDeRed } from '@/utils/red'
+
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: BASE_URL,
 })
+
+function marcarSesionExpirada<T>(error: T): T {
+  if (error && typeof error === 'object') {
+    ;(error as { sesionExpirada?: boolean }).sesionExpirada = true
+  }
+  return error
+}
+
+export function esSesionExpirada(err: unknown): boolean {
+  return (
+    !!err &&
+    typeof err === 'object' &&
+    (err as { sesionExpirada?: boolean }).sesionExpirada === true
+  )
+}
 
 api.interceptors.request.use((config) => {
   const authStore = useAuthStore()
@@ -24,10 +42,9 @@ async function refreshAccessToken(): Promise<string> {
   if (!refresh) {
     throw new Error('Sin refresh token.')
   }
-  const response = await axios.post<Token>(
-    `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
-    { refresh_token: refresh },
-  )
+  const response = await api.post<Token>('/auth/refresh', {
+    refresh_token: refresh,
+  })
   const data = response.data
   authStore.setTokens(data.access_token, data.refresh_token ?? null)
   return data.access_token
@@ -66,13 +83,14 @@ api.interceptors.response.use(
       if (!originalRequest || originalRequest._retry || isAuthPath(originalRequest.url)) {
         if (!isAuthPath(originalRequest?.url)) {
           redirectToLogin()
+          return Promise.reject(marcarSesionExpirada(error))
         }
         return Promise.reject(error)
       }
 
       if (!authStore.refreshToken) {
         redirectToLogin()
-        return Promise.reject(error)
+        return Promise.reject(marcarSesionExpirada(error))
       }
 
       originalRequest._retry = true
@@ -89,8 +107,13 @@ api.interceptors.response.use(
         }
         return api(originalRequest)
       } catch (refreshError) {
+        if (esErrorDeRed(refreshError)) {
+          // Corte de red al renovar: no cerramos sesión; el llamador puede
+          // reintentar y se muestra un mensaje de conexión.
+          return Promise.reject(refreshError)
+        }
         redirectToLogin()
-        return Promise.reject(refreshError)
+        return Promise.reject(marcarSesionExpirada(refreshError))
       }
     }
 

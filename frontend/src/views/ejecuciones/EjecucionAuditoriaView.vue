@@ -24,6 +24,12 @@ import {
   responsablesDeArea,
 } from '@/services/hallazgo.service'
 import type { Evidencia, ResponsableResumen } from '@/types/hallazgo'
+import { esSesionExpirada } from '@/api/api'
+import { conReintento, esErrorDeRed } from '@/utils/red'
+import {
+  ACEPTA_IMAGENES,
+  procesarImagenParaSubida,
+} from '@/utils/imagen'
 
 const router = useRouter()
 const route = useRoute()
@@ -147,6 +153,14 @@ const filas = computed<Fila[]>(() => {
 })
 
 async function mostrarError(prefix: string, err: unknown) {
+  if (esSesionExpirada(err)) {
+    error.value = 'Tu sesión expiró. Vuelve a iniciar sesión; tu borrador se conservó.'
+    return
+  }
+  if (esErrorDeRed(err)) {
+    error.value = `${prefix}: no se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.`
+    return
+  }
   const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || String(err)
   error.value = `${prefix}: ${msg}`
 }
@@ -154,6 +168,168 @@ async function mostrarError(prefix: string, err: unknown) {
 function limpiarMensajes() {
   error.value = ''
   exito.value = ''
+}
+
+interface BorradorEjecucion {
+  respuestas: Record<
+    number,
+    { valor: string | null; observaciones: string | null }
+  >
+  hallazgos: Record<number, { descripcion: string; fecha_limite: string | null }>
+  fotos: Record<number, { nombre: string; dataUrl: string }[]>
+}
+
+const BORRADOR_PREFIX = 'lpa:borrador:ejecucion:'
+const PRESUPUESTO_FOTOS_BORRADOR = 2_500_000
+
+function claveBorrador(): string | null {
+  return ejecucion.value ? `${BORRADOR_PREFIX}${ejecucion.value.id}` : null
+}
+
+function archivoADataUrl(archivo: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader()
+    lector.onload = () => {
+      if (typeof lector.result === 'string') resolve(lector.result)
+      else reject(new Error('No se pudo leer la imagen.'))
+    }
+    lector.onerror = () => reject(new Error('No se pudo leer la imagen.'))
+    lector.readAsDataURL(archivo)
+  })
+}
+
+function guardarBorradorSinFotos(datos: BorradorEjecucion, clave: string) {
+  try {
+    window.sessionStorage.setItem(
+      clave,
+      JSON.stringify({ ...datos, fotos: {} }),
+    )
+  } catch {
+    // sessionStorage puede no estar disponible; el borrador es opcional.
+  }
+}
+
+async function guardarBorrador() {
+  const clave = claveBorrador()
+  if (!clave) return
+  const datos: BorradorEjecucion = { respuestas: {}, hallazgos: {}, fotos: {} }
+  for (const criterio of criterios.value) {
+    if (
+      criterio.respuesta_valor !== null ||
+      criterio.respuesta_observaciones
+    ) {
+      datos.respuestas[criterio.id] = {
+        valor: criterio.respuesta_valor,
+        observaciones: criterio.respuesta_observaciones,
+      }
+    }
+    const descripcion = (hallazgosInputs.value[criterio.id] ?? '').trim()
+    const fechaLimite = hallazgosFechaLimite.value[criterio.id] ?? null
+    if (descripcion || fechaLimite) {
+      datos.hallazgos[criterio.id] = {
+        descripcion,
+        fecha_limite: fechaLimite,
+      }
+    }
+  }
+  let restante = PRESUPUESTO_FOTOS_BORRADOR
+  for (const criterio of criterios.value) {
+    const pendientes = fotosPendientes.value[criterio.id] ?? []
+    for (const pendiente of pendientes) {
+      const estimado = Math.ceil(pendiente.file.size * 1.4)
+      if (estimado > restante) continue
+      try {
+        const dataUrl = await archivoADataUrl(pendiente.file)
+        if (dataUrl.length > restante) continue
+        datos.fotos[criterio.id] = [
+          ...(datos.fotos[criterio.id] ?? []),
+          { nombre: pendiente.file.name, dataUrl },
+        ]
+        restante -= dataUrl.length
+      } catch {
+        // Si una foto no se puede leer, se omite del borrador.
+      }
+    }
+  }
+  try {
+    window.sessionStorage.setItem(clave, JSON.stringify(datos))
+  } catch {
+    guardarBorradorSinFotos(datos, clave)
+  }
+}
+
+async function restaurarBorrador() {
+  const clave = claveBorrador()
+  if (!clave) return
+  let datos: BorradorEjecucion | null = null
+  try {
+    const crudo = window.sessionStorage.getItem(clave)
+    if (!crudo) return
+    datos = JSON.parse(crudo) as BorradorEjecucion
+  } catch {
+    return
+  }
+  if (!datos) return
+  const porId = new Map(criterios.value.map((c) => [c.id, c]))
+  for (const [id, fotos] of Object.entries(datos.fotos ?? {})) {
+    const criterio = porId.get(Number(id))
+    if (!criterio || criterio.hallazgo_id !== null) continue
+    if ((fotosPendientes.value[criterio.id] ?? []).length > 0) continue
+    const reconstruidas: { file: File; preview: string }[] = []
+    for (const foto of fotos) {
+      try {
+        const respuesta = await fetch(foto.dataUrl)
+        const blob = await respuesta.blob()
+        reconstruidas.push({
+          file: new File([blob], foto.nombre || 'imagen.jpg', {
+            type: blob.type || 'image/jpeg',
+          }),
+          preview: foto.dataUrl,
+        })
+      } catch {
+        // Si no se puede reconstruir, se ignora.
+      }
+    }
+    if (reconstruidas.length) {
+      fotosPendientes.value[criterio.id] = reconstruidas
+    }
+  }
+  for (const [id, valor] of Object.entries(datos.respuestas ?? {})) {
+    const criterio = porId.get(Number(id))
+    if (!criterio) continue
+    if (criterio.respuesta_id === null && criterio.respuesta_valor === null) {
+      criterio.respuesta_valor = valor.valor
+      if (valor.observaciones) {
+        criterio.respuesta_observaciones = valor.observaciones
+      }
+    }
+  }
+  for (const [id, valor] of Object.entries(datos.hallazgos ?? {})) {
+    const criterio = porId.get(Number(id))
+    if (!criterio || criterio.hallazgo_id !== null) continue
+    if (valor.descripcion) {
+      hallazgosInputs.value[criterio.id] = valor.descripcion
+    }
+    if (valor.fecha_limite) {
+      hallazgosFechaLimite.value[criterio.id] = valor.fecha_limite
+    }
+  }
+}
+
+function olvidarBorradorCriterio(criterioId: number) {
+  const clave = claveBorrador()
+  if (!clave) return
+  try {
+    const crudo = window.sessionStorage.getItem(clave)
+    if (!crudo) return
+    const datos = JSON.parse(crudo) as BorradorEjecucion
+    delete datos.respuestas[criterioId]
+    delete datos.hallazgos[criterioId]
+    if (datos.fotos) delete datos.fotos[criterioId]
+    window.sessionStorage.setItem(clave, JSON.stringify(datos))
+  } catch {
+    // Sin borrador que actualizar.
+  }
 }
 
 onMounted(async () => {
@@ -208,6 +384,7 @@ async function cargarEjecucionExistente(id: number) {
   try {
     ejecucion.value = await obtenerEjecucion(id)
     sincronizarBorradorHallazgos()
+    await restaurarBorrador()
     paso.value = 'ejecutando'
   } catch (err) {
     mostrarError('Error al cargar la ejecución', err)
@@ -245,6 +422,7 @@ async function iniciar(celula: Celula | null) {
     })
     ejecucion.value = ej
     sincronizarBorradorHallazgos()
+    await restaurarBorrador()
     paso.value = 'ejecutando'
   } catch (err) {
     mostrarError('Error al iniciar ejecución', err)
@@ -300,22 +478,24 @@ function elegirGaleria() {
   inputFotos.value?.click()
 }
 
-function onFotosSeleccionadas(event: Event) {
+async function onFotosSeleccionadas(event: Event) {
   const input = event.target as HTMLInputElement
   const criterio = criterioFotosActivo.value
   if (!criterio || !input.files?.length) return
+  const archivos = Array.from(input.files)
+  input.value = ''
   const nuevos: { file: File; preview: string }[] = []
-  for (const file of Array.from(input.files)) {
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+  for (const archivo of archivos) {
+    try {
+      const procesada = await procesarImagenParaSubida(archivo)
+      nuevos.push({
+        file: procesada,
+        preview: URL.createObjectURL(procesada),
+      })
+    } catch (err) {
       hallazgosError.value[criterio.id] =
-        'Formato no permitido. Usa archivos JPG, PNG o WEBP.'
-      continue
+        err instanceof Error ? err.message : 'No se pudo procesar la imagen.'
     }
-    if (file.size > 5 * 1024 * 1024) {
-      hallazgosError.value[criterio.id] = 'La imagen supera el límite de 5 MB.'
-      continue
-    }
-    nuevos.push({ file, preview: URL.createObjectURL(file) })
   }
   if (nuevos.length) {
     fotosPendientes.value[criterio.id] = [
@@ -323,7 +503,6 @@ function onFotosSeleccionadas(event: Event) {
       ...nuevos,
     ]
   }
-  input.value = ''
 }
 
 function quitarFotoPendiente(criterioId: number, indice: number) {
@@ -341,7 +520,9 @@ async function subirFotosPendientes(criterioId: number, hallazgoId: number) {
   fotosSubiendo.value[criterioId] = true
   try {
     for (const pendiente of pendientes) {
-      const evidencia = await subirEvidencia(hallazgoId, pendiente.file)
+      const evidencia = await conReintento(() =>
+        subirEvidencia(hallazgoId, pendiente.file),
+      )
       URL.revokeObjectURL(pendiente.preview)
       hallazgosFotos.value[criterioId] = [
         ...(hallazgosFotos.value[criterioId] ?? []),
@@ -415,7 +596,10 @@ async function persistirRespuestasPendientes(): Promise<void> {
       observaciones: c.respuesta_observaciones || null,
     }))
   if (respuestas.length === 0) return
-  ejecucion.value = await guardarRespuestas(ejecucion.value.id, { respuestas })
+  const ejecucionId = ejecucion.value.id
+  ejecucion.value = await conReintento(() =>
+    guardarRespuestas(ejecucionId, { respuestas }),
+  )
 }
 
 async function guardarHallazgo(criterio: CriterioRespuesta) {
@@ -447,6 +631,7 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
   }
   hallazgosGuardando.value[criterio.id] = true
   hallazgosError.value[criterio.id] = 'Guardando respuesta, espera un momento…'
+  await guardarBorrador()
   try {
     if (!criterio.respuesta_id) {
       await persistirRespuestasPendientes()
@@ -483,10 +668,19 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     }
     hallazgosError.value[crit.id] = ''
     exito.value = 'Hallazgo guardado correctamente.'
+    olvidarBorradorCriterio(crit.id)
   } catch (err) {
-    hallazgosError.value[criterio.id] =
-      (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-      String(err)
+    if (esSesionExpirada(err)) {
+      hallazgosError.value[criterio.id] =
+        'Tu sesión expiró. Vuelve a iniciar sesión; tu borrador se conservó.'
+    } else if (esErrorDeRed(err)) {
+      hallazgosError.value[criterio.id] =
+        'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo. Tu borrador se conservó.'
+    } else {
+      hallazgosError.value[criterio.id] =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        String(err)
+    }
   } finally {
     hallazgosGuardando.value[criterio.id] = false
   }
@@ -494,6 +688,7 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
 
 async function guardar() {
   limpiarMensajes()
+  await guardarBorrador()
   cargando.value = true
   try {
     const respuestas = criterios.value
@@ -503,7 +698,10 @@ async function guardar() {
         valor: c.respuesta_valor!,
         observaciones: c.respuesta_observaciones || null,
       }))
-    ejecucion.value = await guardarRespuestas(ejecucion.value!.id, { respuestas })
+    const ejecucionId = ejecucion.value!.id
+    ejecucion.value = await conReintento(() =>
+      guardarRespuestas(ejecucionId, { respuestas }),
+    )
     sincronizarBorradorHallazgos()
     for (const c of criterios.value) {
       if (mostrarCampoHallazgo(c)) {
@@ -586,7 +784,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
     <input
       ref="inputFotos"
       type="file"
-      accept="image/jpeg,image/png,image/webp"
+      :accept="ACEPTA_IMAGENES"
       multiple
       hidden
       @change="onFotosSeleccionadas"
@@ -594,7 +792,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
     <input
       ref="inputCamara"
       type="file"
-      accept="image/jpeg,image/png,image/webp"
+      :accept="ACEPTA_IMAGENES"
       capture="environment"
       hidden
       @change="onFotosSeleccionadas"
@@ -900,7 +1098,7 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                               : 'Agregar foto'
                         }}
                       </strong>
-                      <small>JPG, PNG o WEBP · máx. 5 MB</small>
+                      <small>JPG, PNG, WEBP o HEIC · máx. 5 MB</small>
                     </span>
                   </button>
                   <div

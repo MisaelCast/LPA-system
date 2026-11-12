@@ -11,6 +11,7 @@ from app.models.celula import Celula
 from app.models.criterio import Criterio
 from app.models.ejecucion_auditoria import EjecucionAuditoria
 from app.models.hallazgo import ESTADOS_HALLAZGO, Hallazgo
+from app.models.hallazgo_responsable import HallazgoResponsable
 from app.models.hallazgo_seguimiento import HallazgoSeguimiento
 from app.models.respuesta import Respuesta
 from app.models.usuario import Usuario
@@ -318,7 +319,33 @@ class HallazgoService:
                 )
 
         EvidenciaService(self._session).eliminar_de_hallazgo(hallazgo)
+        self._eliminar_dependencias(hallazgo)
         self._repo.eliminar(hallazgo)
+
+    def _eliminar_dependencias(self, hallazgo: Hallazgo) -> None:
+        """Borra filas hijas sin ``ON DELETE CASCADE`` antes del hallazgo.
+
+        ``hallazgo_seguimiento`` y ``hallazgo_responsable`` referencian a
+        ``hallazgo`` sin cascada a nivel de base de datos; si no se eliminan
+        primero, el DELETE del hallazgo falla por llave foranea (HTTP 500).
+        """
+        if hallazgo.id is None:
+            return
+        seguimientos = self._session.exec(
+            select(HallazgoSeguimiento).where(
+                HallazgoSeguimiento.hallazgo_id == hallazgo.id
+            )
+        ).all()
+        for seguimiento in seguimientos:
+            self._session.delete(seguimiento)
+        vinculos = self._session.exec(
+            select(HallazgoResponsable).where(
+                HallazgoResponsable.hallazgo_id == hallazgo.id
+            )
+        ).all()
+        for vinculo in vinculos:
+            self._session.delete(vinculo)
+        self._session.flush()
 
     def listar_por_ejecucion(
         self, ejecucion_id: int, usuario: Usuario

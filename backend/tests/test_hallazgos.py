@@ -871,6 +871,54 @@ class TestHallazgoService:
         assert resultado.responsable_id is None
         assert resultado.fecha_limite is None
 
+    def test_eliminar_borra_dependencias_sin_cascade(self):
+        """El borrado elimina seguimientos y vínculos antes del hallazgo."""
+        hallazgo = Hallazgo(id=5, descripcion="Detalle", respuesta_id=100)
+        respuesta = _respuesta(valor="A")
+        ejecucion = _ejecucion()
+
+        seguimiento = MagicMock()
+        vinculo = MagicMock()
+
+        def fake_exec(statement):
+            resultado = MagicMock()
+            texto = str(statement)
+            if "hallazgo_seguimiento" in texto:
+                resultado.all.return_value = [seguimiento]
+            elif "hallazgo_responsable" in texto:
+                resultado.all.return_value = [vinculo]
+            else:
+                resultado.all.return_value = []
+            return resultado
+
+        self.mock_session.exec.side_effect = fake_exec
+
+        def fake_get(cls, _id):
+            if getattr(cls, "__name__", "") == "EjecucionAuditoria":
+                return ejecucion
+            return None
+
+        self.mock_session.get.side_effect = fake_get
+
+        with patch.object(
+            type(self.service._repo), "obtener_por_id", return_value=hallazgo
+        ), patch.object(
+            type(self.service._respuesta_repo),
+            "obtener_por_id",
+            return_value=respuesta,
+        ), patch(
+            "app.services.hallazgo_service.EvidenciaService.eliminar_de_hallazgo"
+        ) as limpiar_evidencias, patch.object(
+            type(self.service._repo), "eliminar"
+        ) as repo_eliminar:
+            self.service.eliminar(5, self.usuario)
+
+        limpiar_evidencias.assert_called_once_with(hallazgo)
+        self.mock_session.delete.assert_any_call(seguimiento)
+        self.mock_session.delete.assert_any_call(vinculo)
+        self.mock_session.flush.assert_called()
+        repo_eliminar.assert_called_once_with(hallazgo)
+
 
 class TestResponsablesAreaEndpoint:
     """Pruebas HTTP del listado de responsables de un área."""

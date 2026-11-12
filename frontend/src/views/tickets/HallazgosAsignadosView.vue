@@ -12,6 +12,12 @@ import {
   solicitarCierre,
   subirEvidencia,
 } from '@/services/hallazgo.service'
+import { esSesionExpirada } from '@/api/api'
+import { conReintento, esErrorDeRed } from '@/utils/red'
+import {
+  ACEPTA_IMAGENES,
+  procesarImagenParaSubida,
+} from '@/utils/imagen'
 
 const cargando = ref(false)
 const error = ref('')
@@ -203,10 +209,18 @@ function mostrarArea(t: HallazgoDetallado): boolean {
 }
 
 function mensajeError(err: unknown, porDefecto: string): string {
-  return (
-    (err as { response?: { data?: { detail?: string } } })?.response?.data
-      ?.detail || porDefecto
-  )
+  if (esSesionExpirada(err)) {
+    return 'Tu sesión expiró. Vuelve a iniciar sesión.'
+  }
+  if (esErrorDeRed(err)) {
+    return 'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.'
+  }
+  const detalle = (
+    err as { response?: { data?: { detail?: string } } }
+  )?.response?.data?.detail
+  if (detalle) return detalle
+  if (err instanceof Error && err.message) return err.message
+  return porDefecto
 }
 
 function formatearFecha(iso: string | null): string {
@@ -344,18 +358,13 @@ async function onFotoSeleccionada(event: Event) {
   const archivo = input.files[0]
   input.value = ''
   if (!archivo) return
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(archivo.type)) {
-    error.value = 'Formato no permitido. Usa JPG, PNG o WEBP.'
-    return
-  }
-  if (archivo.size > 5 * 1024 * 1024) {
-    error.value = 'La imagen supera el límite de 5 MB.'
-    return
-  }
   subiendo.value = true
   error.value = ''
   try {
-    const evidencia = await subirEvidencia(t.id, archivo, 'correccion')
+    const procesada = await procesarImagenParaSubida(archivo)
+    const evidencia = await conReintento(() =>
+      subirEvidencia(t.id, procesada, 'correccion'),
+    )
     seleccionado.value = {
       ...t,
       evidencias: [...t.evidencias, evidencia],
@@ -616,14 +625,14 @@ async function onFotoSeleccionada(event: Event) {
             <input
               ref="inputFoto"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              :accept="ACEPTA_IMAGENES"
               hidden
               @change="onFotoSeleccionada"
             />
             <input
               ref="inputCamara"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              :accept="ACEPTA_IMAGENES"
               capture="environment"
               hidden
               @change="onFotoSeleccionada"
