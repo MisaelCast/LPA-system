@@ -40,6 +40,7 @@ const guardando = ref(false)
 const formResponsableId = ref<number | null>(null)
 const formFechaLimite = ref('')
 const formObservacion = ref('')
+const reasignarAbierto = ref(false)
 
 const estados: { valor: EstadoHallazgo; label: string }[] = [
   { valor: 'abierto', label: 'Abierto' },
@@ -60,8 +61,15 @@ const puedeEditar = computed(
     hallazgoSeleccionado.value !== null &&
     authStore.usuario?.id === hallazgoSeleccionado.value.auditor_id,
 )
+const asignacionConfigurada = computed(() => {
+  const h = hallazgoSeleccionado.value
+  return !!h && h.responsable_id !== null && h.fecha_limite !== null
+})
 const puedeAsignar = computed(
   () => puedeEditar.value && hallazgoSeleccionado.value?.estado !== 'cerrado',
+)
+const mostrarFormularioAsignacion = computed(
+  () => puedeAsignar.value && (reasignarAbierto.value || !asignacionConfigurada.value),
 )
 const puedeResolverCierre = computed(
   () =>
@@ -164,6 +172,7 @@ async function abrirDetalle(h: HallazgoDetallado) {
   formResponsableId.value = h.responsable_id
   formFechaLimite.value = aInputLocal(h.fecha_limite)
   formObservacion.value = ''
+  reasignarAbierto.value = false
   responsables.value = []
   historial.value = []
   error.value = ''
@@ -214,6 +223,7 @@ async function guardarAsignacion() {
     actualizarEnLista(actualizado)
     formFechaLimite.value = aInputLocal(actualizado.fecha_limite)
     historial.value = await listarHistorial(h.id)
+    reasignarAbierto.value = false
     exito.value = 'Responsable asignado.'
   } catch (err) {
     error.value = mensajeError(err, 'No se pudo asignar el responsable.')
@@ -441,8 +451,10 @@ async function resolver(aprobar: boolean) {
           </section>
 
           <!-- Asignar / reasignar responsable -->
-          <section v-if="puedeAsignar" class="seguimiento-form">
-            <h4>Asignar responsable</h4>
+          <section v-if="mostrarFormularioAsignacion" class="seguimiento-form">
+            <h4>
+              {{ asignacionConfigurada ? 'Reasignar responsable' : 'Asignar responsable' }}
+            </h4>
             <label class="field">
               <span>Responsable de Manufactura</span>
               <select v-model.number="formResponsableId">
@@ -461,10 +473,24 @@ async function resolver(aprobar: boolean) {
             </label>
             <div class="acciones-fila">
               <button class="btn-primary" :disabled="guardando" @click="guardarAsignacion">
-                {{ guardando ? 'Guardando…' : 'Asignar responsable' }}
+                {{
+                  guardando
+                    ? 'Guardando…'
+                    : asignacionConfigurada
+                      ? 'Guardar cambios'
+                      : 'Asignar responsable'
+                }}
               </button>
             </div>
           </section>
+          <div
+            v-if="puedeAsignar && !mostrarFormularioAsignacion"
+            class="acciones-fila"
+          >
+            <button class="btn-secondary" @click="reasignarAbierto = true">
+              Reasignar responsable o fecha
+            </button>
+          </div>
 
           <!-- Resolver solicitud de cierre -->
           <section v-if="puedeResolverCierre" class="seccion-cierre">
