@@ -602,6 +602,39 @@ async function persistirRespuestasPendientes(): Promise<void> {
   )
 }
 
+/**
+ * Intenta recuperar un hallazgo que sí quedó registrado aunque el cliente no
+ * recibió la respuesta (p. ej. 500 durante un despliegue o corte de red).
+ * Refresca la ejecución y, si el hallazgo existe, sube las fotos pendientes.
+ */
+async function recuperarHallazgoExistente(
+  criterio: CriterioRespuesta,
+): Promise<boolean> {
+  if (!ejecucion.value) return false
+  try {
+    ejecucion.value = await obtenerEjecucion(ejecucion.value.id)
+    await restaurarBorrador()
+    const crit = criterios.value.find((c) => c.id === criterio.id)
+    if (!crit || crit.hallazgo_id === null) return false
+    if (crit.hallazgo_descripcion) {
+      hallazgosInputs.value[crit.id] = crit.hallazgo_descripcion
+    }
+    try {
+      await subirFotosPendientes(crit.id, crit.hallazgo_id)
+    } catch {
+      hallazgosError.value[crit.id] =
+        'El hallazgo ya estaba registrado, pero no se pudieron subir las fotos. Intenta de nuevo.'
+      return true
+    }
+    hallazgosError.value[crit.id] = ''
+    exito.value = 'Hallazgo guardado correctamente.'
+    olvidarBorradorCriterio(crit.id)
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function guardarHallazgo(criterio: CriterioRespuesta) {
   if (soloLectura.value) {
     hallazgosError.value[criterio.id] =
@@ -670,12 +703,23 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     exito.value = 'Hallazgo guardado correctamente.'
     olvidarBorradorCriterio(crit.id)
   } catch (err) {
-    if (esSesionExpirada(err)) {
+    const sesionExpirada = esSesionExpirada(err)
+    const estado = (err as { response?: { status?: number } })?.response?.status
+    const puedeRecuperarse =
+      !sesionExpirada &&
+      (estado === 409 || estado === 500 || esErrorDeRed(err))
+    if (puedeRecuperarse && (await recuperarHallazgoExistente(criterio))) {
+      return
+    }
+    if (sesionExpirada) {
       hallazgosError.value[criterio.id] =
         'Tu sesión expiró. Vuelve a iniciar sesión; tu borrador se conservó.'
     } else if (esErrorDeRed(err)) {
       hallazgosError.value[criterio.id] =
         'No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo. Tu borrador se conservó.'
+    } else if (estado === 409) {
+      hallazgosError.value[criterio.id] =
+        'Ya existe un hallazgo registrado para esta respuesta.'
     } else {
       hallazgosError.value[criterio.id] =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
