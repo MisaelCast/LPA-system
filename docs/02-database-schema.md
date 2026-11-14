@@ -6,12 +6,22 @@ Este documento describe el diseño físico de la base de datos del Sistema LPA: 
 
 Complementa a [Modelo de Dominio](./01-domain-model.md), que describe el negocio y no el diseño de la base de datos.
 
+> **Estado (actualizado al código vigente):** el esquema consta de **19 tablas**.
+> La última revisión de Alembic es `f1a2b3c4d5e6` e incluye
+> `hallazgo_seguimiento`, `programacion_semanal` y `auditoria_dia`, además de
+> las columnas `hallazgo.fecha_limite`, `evidencia.tipo` y
+> `auditoria.programacion_semanal`. Estas funcionalidades están implementadas;
+> el documento se actualiza para evitar que una versión anterior se interprete
+> como ausencia de implementación.
+
 | Dato | Valor |
 | --- | --- |
 | Motor | PostgreSQL |
 | ORM | SQLModel (SQLAlchemy + Pydantic) |
 | Modelos | `backend/app/models/` |
 | Migraciones | `backend/migrations/versions/` |
+| Tablas | 19 |
+| Última revisión | `f1a2b3c4d5e6` |
 
 ---
 
@@ -25,16 +35,19 @@ Complementa a [Modelo de Dominio](./01-domain-model.md), que describe el negocio
 | 4 | `rol` | Rol de acceso asignado a un usuario. |
 | 5 | `usuario` | Persona que utiliza el sistema LPA. |
 | 6 | `auditoria` | Auditoría disponible dentro del sistema. |
-| 7 | `celula` | Línea o célula de producción dentro de un área. |
-| 8 | `criterio` | Punto de inspección dentro de una auditoría. |
-| 9 | `ejecucion_auditoria` | Auditoría realizada por un usuario en una fecha. |
-| 10 | `respuesta` | Resultado observado para un criterio durante una ejecución. |
-| 11 | `hallazgo` | Desviación detectada durante una auditoría. |
-| 12 | `evidencia` | Archivo asociado a un hallazgo. |
-| 13 | `usuario_area` | Tabla intermedia N:M entre usuario y área. |
-| 14 | `hallazgo_responsable` | Tabla intermedia N:M entre hallazgo y usuario. |
-| 15 | `usuario_celula` | Tabla intermedia N:M entre usuario y célula a cargo. |
-| 16 | `usuario_supervisor` | Tabla intermedia N:M entre gerente y supervisores a cargo. |
+| 7 | `auditoria_dia` | Días hábiles elegidos para la recurrencia semanal de una auditoría. |
+| 8 | `programacion_semanal` | Asignación semanal de auditorías por sorteo (lunes a viernes). |
+| 9 | `celula` | Línea o célula de producción dentro de un área. |
+| 10 | `criterio` | Punto de inspección dentro de una auditoría. |
+| 11 | `ejecucion_auditoria` | Auditoría realizada por un usuario en una fecha. |
+| 12 | `respuesta` | Resultado observado para un criterio durante una ejecución. |
+| 13 | `hallazgo` | Desviación detectada durante una auditoría (ticket de corrección). |
+| 14 | `hallazgo_responsable` | Tabla intermedia N:M entre hallazgo y usuario responsable. |
+| 15 | `hallazgo_seguimiento` | Historial inmutable de acciones y transiciones del hallazgo. |
+| 16 | `evidencia` | Archivo asociado a un hallazgo (original o de corrección). |
+| 17 | `usuario_area` | Tabla intermedia N:M entre usuario y área. |
+| 18 | `usuario_celula` | Tabla intermedia N:M entre usuario y célula a cargo. |
+| 19 | `usuario_supervisor` | Tabla intermedia N:M entre gerente y supervisores a cargo. |
 
 ---
 
@@ -96,11 +109,33 @@ CREATE TABLE auditoria (
     activa        BOOLEAN      NOT NULL DEFAULT TRUE,
     tipo_respuesta VARCHAR(20)  NOT NULL DEFAULT 'semaforo',
     dia_semana   INTEGER,
+    programacion_semanal BOOLEAN NOT NULL DEFAULT FALSE,
     capa_id       INTEGER      NOT NULL REFERENCES capa (id),
     frecuencia_id INTEGER      NOT NULL REFERENCES frecuencia (id),
     area_id       INTEGER      REFERENCES area (id)
 );
 CREATE INDEX ix_auditoria_nombre ON auditoria (nombre);
+
+-- auditoria_dia: Días hábiles elegidos para la recurrencia semanal.
+CREATE TABLE auditoria_dia (
+    id           SERIAL  PRIMARY KEY,
+    auditoria_id INTEGER NOT NULL REFERENCES auditoria (id),
+    dia_semana   INTEGER NOT NULL CHECK (dia_semana BETWEEN 0 AND 4),
+    CONSTRAINT uq_auditoria_dia UNIQUE (auditoria_id, dia_semana)
+);
+CREATE INDEX ix_auditoria_dia_auditoria_id ON auditoria_dia (auditoria_id);
+
+-- programacion_semanal: Sorteo de auditorías por semana y día hábil.
+CREATE TABLE programacion_semanal (
+    id            SERIAL  PRIMARY KEY,
+    semana_inicio DATE    NOT NULL,
+    dia_semana    INTEGER NOT NULL CHECK (dia_semana BETWEEN 0 AND 4),
+    auditoria_id  INTEGER NOT NULL REFERENCES auditoria (id),
+    CONSTRAINT uq_programacion_semanal_semana_dia
+        UNIQUE (semana_inicio, dia_semana)
+);
+CREATE INDEX ix_programacion_semanal_semana_inicio
+    ON programacion_semanal (semana_inicio);
 
 -- celula: Línea o célula de producción dentro de un área.
 CREATE TABLE celula (
@@ -146,7 +181,8 @@ CREATE TABLE respuesta (
         UNIQUE (ejecucion_auditoria_id, criterio_id)
 );
 
--- hallazgo: Desviación detectada durante una auditoría.
+-- hallazgo: Desviación detectada durante una auditoría (ticket).
+-- estado: abierto | en_correccion | cierre_solicitado | cerrado
 CREATE TABLE hallazgo (
     id                  SERIAL        PRIMARY KEY,
     descripcion         VARCHAR(1000) NOT NULL,
@@ -155,18 +191,34 @@ CREATE TABLE hallazgo (
     estado              VARCHAR(20)   NOT NULL DEFAULT 'abierto',
     accion_correctiva   VARCHAR(1000),
     area_responsable_id INTEGER       REFERENCES area (id),
+    fecha_limite        TIMESTAMP,
     fecha_cierre        TIMESTAMP WITH TIME ZONE,
     CONSTRAINT hallazgo_respuesta_id_key UNIQUE (respuesta_id)
 );
 
--- evidencia: Archivo asociado a un hallazgo.
+-- evidencia: Archivo asociado a un hallazgo (original o de corrección).
 CREATE TABLE evidencia (
     id           SERIAL       PRIMARY KEY,
     ruta_archivo VARCHAR(500) NOT NULL,
     tipo_archivo VARCHAR(100) NOT NULL DEFAULT 'fotografia',
+    tipo         VARCHAR(20)  NOT NULL DEFAULT 'original',
     fecha_carga  TIMESTAMP    NOT NULL,
     hallazgo_id  INTEGER      NOT NULL REFERENCES hallazgo (id)
 );
+
+-- hallazgo_seguimiento: Historial inmutable de acciones y transiciones.
+CREATE TABLE hallazgo_seguimiento (
+    id             SERIAL        PRIMARY KEY,
+    hallazgo_id    INTEGER       NOT NULL REFERENCES hallazgo (id),
+    usuario_id     INTEGER       NOT NULL REFERENCES usuario (id),
+    tipo           VARCHAR(30)   NOT NULL,
+    detalle        VARCHAR(1000),
+    estado_desde   VARCHAR(20),
+    estado_hasta   VARCHAR(20),
+    fecha_creacion TIMESTAMP     NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_hallazgo_seguimiento_hallazgo_id
+    ON hallazgo_seguimiento (hallazgo_id);
 
 -- usuario_area: Asigna usuarios a las áreas donde pueden operar (N:M).
 CREATE TABLE usuario_area (
@@ -206,11 +258,12 @@ rol                  1 --- N  usuario
 area                 1 --- N  celula
 area                 1 --- N  auditoria
 area                 N --- N  usuario              (via usuario_area)
-area                 N --- N  usuario              (via usuario_celula)
 celula               N --- N  usuario              (via usuario_celula)
 usuario (gerente)    N --- N  usuario (supervisor) (via usuario_supervisor)
 capa                 1 --- N  auditoria
 frecuencia           1 --- N  auditoria
+auditoria            1 --- N  auditoria_dia        (días hábiles elegidos)
+auditoria            1 --- N  programacion_semanal (sorteo semanal)
 auditoria            1 --- N  criterio
 auditoria            1 --- N  ejecucion_auditoria
 celula               1 --- N  ejecucion_auditoria
@@ -220,6 +273,8 @@ criterio             1 --- N  respuesta
 respuesta            1 --- 1  hallazgo
 hallazgo             1 --- N  evidencia
 hallazgo             N --- N  usuario              (via hallazgo_responsable)
+hallazgo             1 --- N  hallazgo_seguimiento (historial)
+usuario              1 --- N  hallazgo_seguimiento (autor de la acción)
 area                 1 --- N  hallazgo             (area_responsable)
 ```
 
@@ -296,6 +351,9 @@ class Rol(SQLModel, table=True):
     usuarios: list["Usuario"] = Relationship(back_populates="rol")
 ```
 
+> Roles sembrados por defecto: `Administrador`, `Gerente`, `Supervisor`,
+> `Auditor` y `Responsable de Manufactura`.
+
 ### `usuario` — `backend/app/models/usuario.py`
 
 ```python
@@ -348,6 +406,7 @@ class Auditoria(SQLModel, table=True):
     activa: bool = Field(default=True)
     tipo_respuesta: str = Field(default="semaforo", max_length=20)
     dia_semana: int | None = Field(default=None, ge=0, le=6)
+    programacion_semanal: bool = Field(default=False)
     capa_id: int = Field(foreign_key="capa.id")
     frecuencia_id: int = Field(foreign_key="frecuencia.id")
     area_id: int | None = Field(default=None, foreign_key="area.id")
@@ -359,6 +418,42 @@ class Auditoria(SQLModel, table=True):
     ejecuciones_auditoria: list["EjecucionAuditoria"] = Relationship(
         back_populates="auditoria",
     )
+    dias_rows: list["AuditoriaDia"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+        },
+    )
+```
+
+### `auditoria_dia` — `backend/app/models/auditoria_dia.py`
+
+```python
+class AuditoriaDia(SQLModel, table=True):
+    """Día hábil (0=Lunes..4=Viernes) en que una auditoría se ejecuta."""
+
+    __tablename__ = "auditoria_dia"
+    __table_args__ = (
+        UniqueConstraint("auditoria_id", "dia_semana", name="uq_auditoria_dia"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    auditoria_id: int = Field(foreign_key="auditoria.id", index=True)
+    dia_semana: int = Field(ge=0, le=4)
+```
+
+### `programacion_semanal` — `backend/app/models/programacion_semanal.py`
+
+```python
+class ProgramacionSemanal(SQLModel, table=True):
+    """Asigna, por semana, una auditoría a cada día hábil."""
+
+    __tablename__ = "programacion_semanal"
+
+    id: int | None = Field(default=None, primary_key=True)
+    semana_inicio: date = Field(index=True)  # lunes de la semana
+    dia_semana: int = Field(ge=0, le=4)
+    auditoria_id: int = Field(foreign_key="auditoria.id")
 ```
 
 ### `celula` — `backend/app/models/celula.py`
@@ -463,11 +558,11 @@ class Respuesta(SQLModel, table=True):
 ### `hallazgo` — `backend/app/models/hallazgo.py`
 
 ```python
-ESTADOS_HALLAZGO = ("abierto", "en_proceso", "cerrado")
+ESTADOS_HALLAZGO = ("abierto", "en_correccion", "cierre_solicitado", "cerrado")
 
 
 class Hallazgo(SQLModel, table=True):
-    """Desviacion detectada durante una auditoria."""
+    """Desviacion detectada durante una auditoria (ticket de correccion)."""
 
     __tablename__ = "hallazgo"
 
@@ -481,6 +576,7 @@ class Hallazgo(SQLModel, table=True):
     area_responsable_id: int | None = Field(
         default=None, foreign_key="area.id"
     )
+    fecha_limite: datetime | None = Field(default=None)
     fecha_cierre: datetime | None = Field(default=None)
 
     respuesta: "Respuesta" = Relationship(back_populates="hallazgo")
@@ -490,6 +586,9 @@ class Hallazgo(SQLModel, table=True):
         link_model=HallazgoResponsable,
     )
     area_responsable: Optional["Area"] = Relationship()
+    seguimientos: list["HallazgoSeguimiento"] = Relationship(
+        back_populates="hallazgo",
+    )
 ```
 
 ### `evidencia` — `backend/app/models/evidencia.py`
@@ -503,10 +602,34 @@ class Evidencia(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     ruta_archivo: str = Field(max_length=500)
     tipo_archivo: str = Field(default="fotografia", max_length=100)
+    tipo: str = Field(default="original", max_length=20)
     fecha_carga: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     hallazgo_id: int = Field(foreign_key="hallazgo.id")
 
     hallazgo: "Hallazgo" = Relationship(back_populates="evidencias")
+```
+
+### `hallazgo_seguimiento` — `backend/app/models/hallazgo_seguimiento.py`
+
+```python
+class HallazgoSeguimiento(SQLModel, table=True):
+    """Entrada del historial de un hallazgo (ticket)."""
+
+    __tablename__ = "hallazgo_seguimiento"
+
+    id: int | None = Field(default=None, primary_key=True)
+    hallazgo_id: int = Field(foreign_key="hallazgo.id", index=True)
+    usuario_id: int = Field(foreign_key="usuario.id")
+    tipo: str = Field(max_length=30)
+    detalle: str | None = Field(default=None, max_length=1000)
+    estado_desde: str | None = Field(default=None, max_length=20)
+    estado_hasta: str | None = Field(default=None, max_length=20)
+    fecha_creacion: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    hallazgo: "Hallazgo" = Relationship(back_populates="seguimientos")
+    usuario: "Usuario" = Relationship()
 ```
 
 ### `usuario_area` — `backend/app/models/usuario_area.py`
@@ -571,3 +694,6 @@ class HallazgoResponsable(SQLModel, table=True):
 | `a6b7c8d9e0f1` | Programación: `frecuencia.dias`, `ejecucion_auditoria.fecha_programada`, tabla `usuario_celula`. |
 | `b1c2d3e4f5a6` | Asignación por rol: tabla `usuario_supervisor` (gerente ↔ supervisores). |
 | `c2d3e4f5a6b7` | Semanal: `capa.requiere_celula`, `auditoria.dia_semana`. |
+| `d3e4f5a6b7c8` | Tickets: `hallazgo.fecha_limite`, tabla `hallazgo_seguimiento`, `evidencia.tipo` (`original`/`correccion`) y renombrado de estado `en_proceso` → `en_correccion`. |
+| `e4f5a6b7c8d9` | Programación semanal: `auditoria.programacion_semanal`, tabla `programacion_semanal`. |
+| `f1a2b3c4d5e6` | Días hábiles elegidos: tabla `auditoria_dia`. |
