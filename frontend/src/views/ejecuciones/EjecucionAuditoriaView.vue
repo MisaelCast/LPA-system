@@ -663,7 +663,7 @@ async function guardarHallazgo(criterio: CriterioRespuesta) {
     return
   }
   hallazgosGuardando.value[criterio.id] = true
-  hallazgosError.value[criterio.id] = 'Guardando respuesta, espera un momento…'
+  hallazgosError.value[criterio.id] = ''
   await guardarBorrador()
   try {
     if (!criterio.respuesta_id) {
@@ -1205,7 +1205,16 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
                     Quitar hallazgo
                   </button>
                 </div>
-                <div v-if="hallazgosError[fila.criterio.id]" class="msg error small">
+                <div
+                  v-if="hallazgosGuardando[fila.criterio.id]"
+                  class="hallazgo-estado"
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span class="hallazgo-estado-spinner" aria-hidden="true"></span>
+                  <span>Guardando hallazgo…</span>
+                </div>
+                <div v-else-if="hallazgosError[fila.criterio.id]" class="msg error small">
                   {{ hallazgosError[fila.criterio.id] }}
                 </div>
                 <div v-else-if="fila.criterio.hallazgo_id" class="msg success small">
@@ -1829,6 +1838,36 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
   flex-wrap: wrap;
 }
 
+.hallazgo-estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--r-sm, 8px);
+  border: 1px solid var(--c-line, #e6e9ef);
+  background: var(--c-surface-2, #f8fafc);
+  color: var(--c-ink-2, #334155);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+
+.hallazgo-estado-spinner {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid var(--c-line-2, #d5dae3);
+  border-top-color: var(--c-primary, #2563eb);
+  animation: hallazgo-spin 0.7s linear infinite;
+}
+
+@keyframes hallazgo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* --- Fotos de evidencia --- */
 .hallazgo-fotos {
   margin-top: 0.6rem;
@@ -2067,6 +2106,11 @@ function claseChip(criterio: CriterioRespuesta, valor: string): string {
 
   .docket-seg.is-done:hover {
     transform: none;
+  }
+
+  .hallazgo-estado-spinner {
+    animation: none;
+    border-top-color: var(--c-primary, #2563eb);
   }
 }
 </style>
