@@ -82,6 +82,14 @@ const areaRequerida = computed(
   () => permisos.value != null && permisos.value.area_ids != null,
 )
 
+function claseCapa(nombre: string | null | undefined): string {
+  const capa = (nombre ?? '').trim().toLowerCase()
+  if (capa === 'auditor') return 'capa-badge--auditor'
+  if (capa === 'supervisor') return 'capa-badge--supervisor'
+  if (capa === 'gerente') return 'capa-badge--gerente'
+  return 'capa-badge--otra'
+}
+
 function puedeGestionarAuditoria(a: Auditoria): boolean {
   const p = permisos.value
   if (!p?.puede_gestionar) return false
@@ -499,7 +507,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </button>
 
             <div class="auditoria-card-meta">
-              <span class="badge meta-badge">{{ a.capa_nombre }}</span>
+              <span class="badge capa-badge" :class="claseCapa(a.capa_nombre)">
+                {{ a.capa_nombre }}
+              </span>
               <span class="badge meta-badge">{{ a.frecuencia_nombre }}</span>
               <span class="meta-text">
                 {{ criterioStore.criteriosDe(a.id).length }} criterios
@@ -1177,6 +1187,54 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .badge-off {
   background: #f1f5f9;
   color: #64748b;
+}
+
+.capa-badge {
+  --capa-accent: #64748b;
+  --capa-ink: #334155;
+  --capa-soft: #f1f5f9;
+}
+
+.badge.capa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--capa-soft);
+  color: var(--capa-ink);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  text-transform: none;
+}
+
+.badge.capa-badge::before {
+  content: '';
+  width: 0.4rem;
+  height: 0.4rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--capa-accent);
+}
+
+.capa-badge--auditor {
+  --capa-accent: #2563eb;
+  --capa-ink: #1e40af;
+  --capa-soft: #eef2ff;
+}
+
+.capa-badge--supervisor {
+  --capa-accent: #7c3aed;
+  --capa-ink: #5b21b6;
+  --capa-soft: #f3e8ff;
+}
+
+.capa-badge--gerente {
+  --capa-accent: #0d9488;
+  --capa-ink: #115e59;
+  --capa-soft: #ccfbf1;
 }
 
 /* --- Icon buttons --- */
