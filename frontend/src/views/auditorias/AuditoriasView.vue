@@ -25,6 +25,7 @@ const formAreaId = ref<number | null>(null)
 const formCapaId = ref<number | null>(null)
   const formFrecuenciaId = ref<number | null>(null)
   const formDias = ref<number[]>([])
+  const formActiva = ref(true)
   const formError = ref('')
   const formGuardando = ref(false)
 
@@ -250,6 +251,7 @@ async function confirmarCrear() {
     formCapaId.value = a.capa_id
     formFrecuenciaId.value = a.frecuencia_id
     formDias.value = [...(a.dias_semana ?? [])].sort((x, y) => x - y)
+    formActiva.value = a.activa
     formError.value = ''
     modalEditarAbierto.value = true
   }
@@ -277,6 +279,7 @@ async function confirmarEditar() {
       capa_id: formCapaId.value ?? undefined,
       frecuencia_id: formFrecuenciaId.value ?? undefined,
       dias_semana: [...formDias.value],
+      activa: formActiva.value,
     })
     mostrarToast('ok', 'Auditoría actualizada.')
     modalEditarAbierto.value = false
@@ -295,6 +298,20 @@ async function eliminarAuditoria(a: Auditoria) {
     await auditoriaStore.eliminar(a.id)
     mostrarToast('ok', 'Auditoría eliminada correctamente.')
   } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    if (status === 409) {
+      const desactivar = window.confirm(
+        `No se puede eliminar "${a.nombre}" porque tiene ejecuciones realizadas asociadas.\n\n¿Deseas desactivarla? Dejará de estar disponible para nuevas ejecuciones y conservará su historial.`,
+      )
+      if (!desactivar) return
+      try {
+        await auditoriaStore.cambiarEstado(a.id, false)
+        mostrarToast('ok', 'Auditoría desactivada.')
+      } catch (error) {
+        mostrarError('desactivar la auditoría', error)
+      }
+      return
+    }
     mostrarError('eliminar la auditoría', err)
   }
 }
@@ -726,6 +743,15 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </div>
             <small class="field-hint">Sin selección: se habilita según la frecuencia.</small>
           </div>
+          <label class="field field-inline">
+            <input v-model="formActiva" type="checkbox" />
+            <span class="field-inline-copy">
+              <strong>{{ formActiva ? 'Auditoría activa' : 'Auditoría inactiva' }}</strong>
+              <small class="field-hint">
+                Si la desactivas, no estará disponible para nuevas ejecuciones; su historial se conserva.
+              </small>
+            </span>
+          </label>
           <p v-if="formError" class="form-error">{{ formError }}</p>
         </div>
         <footer class="modal-footer">
@@ -1506,6 +1532,37 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 .field-hint {
   font-size: 0.75rem;
   color: #64748b;
+}
+
+.field.field-inline {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.field.field-inline .field-inline-copy {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #475569;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.field.field-inline .field-inline-copy strong {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.field.field-inline input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+  border-radius: 0.25rem;
+  accent-color: #2563eb;
+  flex-shrink: 0;
 }
 
 .form-error {
