@@ -50,7 +50,7 @@ def listar_usuarios(
     """Lista los usuarios visibles según el rol del usuario autenticado.
 
     Un Administrador ve a todos; un Gerente ve a todos salvo los
-    Administradores; un Supervisor ve únicamente a los Auditores.
+    Administradores; un Supervisor ve Auditores y Supervisores.
     """
     return UsuarioService(session).listar_visibles(
         current_user, skip=skip, limit=limit
@@ -220,8 +220,8 @@ def crear_usuario(
 ) -> Usuario:
     """Crea un nuevo usuario en el sistema.
 
-    Un Supervisor solo puede crear Auditores; nadie puede crear
-    Administradores.
+    Un Supervisor solo puede crear Auditores y Supervisores; nadie puede
+    crear Administradores.
     """
     service = UsuarioService(session)
     if not service.puede_crear_rol(current_user, datos.rol_id):

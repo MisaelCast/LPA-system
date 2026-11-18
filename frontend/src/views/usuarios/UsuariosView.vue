@@ -21,7 +21,9 @@ const puedeGestionar = computed(
 
 const rolesDisponibles = computed(() =>
   authStore.isSupervisor
-    ? roles.value.filter((r) => r.nombre === 'Auditor')
+    ? roles.value.filter(
+        (r) => r.nombre === 'Auditor' || r.nombre === 'Supervisor',
+      )
     : roles.value,
 )
 
