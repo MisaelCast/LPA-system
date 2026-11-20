@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import HeroSupervisor from '@/components/HeroSupervisor.vue'
 import PlanSemanal from '@/components/PlanSemanal.vue'
 import { listarHallazgos } from '@/services/hallazgo.service'
 import { useAuthStore } from '@/stores/auth'
@@ -60,6 +61,8 @@ function formatearLimite(iso: string | null): string {
 
 <template>
   <div class="dashboard">
+    <HeroSupervisor v-if="authStore.isSupervisor" />
+
     <section
       v-if="mostrarAlerta"
       class="alerta-hallazgos"

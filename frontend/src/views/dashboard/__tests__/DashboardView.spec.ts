@@ -71,6 +71,37 @@ function montar() {
   })
 }
 
+describe('DashboardView - hero del supervisor', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    listarHallazgosMock.mockReset()
+  })
+
+  it('muestra el hero de contexto al supervisor', async () => {
+    autenticar('Supervisor')
+
+    const wrapper = montar()
+    await flushPromises()
+
+    expect(wrapper.find('.hero').exists()).toBe(true)
+    expect(wrapper.text()).toContain('La calidad se audita')
+    expect(wrapper.text()).toContain('3 capas de auditoría')
+    expect(wrapper.text()).toContain('Ciclo de mejora')
+    expect(wrapper.text()).toContain('Audita el proceso en piso')
+    expect(wrapper.text()).toContain('Audita la ejecución y el seguimiento')
+    expect(wrapper.text()).toContain('Audita la eficacia del sistema')
+  })
+
+  it('no muestra el hero a otros roles', async () => {
+    autenticar('Auditor')
+
+    const wrapper = montar()
+    await flushPromises()
+
+    expect(wrapper.find('.hero').exists()).toBe(false)
+  })
+})
+
 describe('DashboardView - alerta de hallazgos asignados', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
