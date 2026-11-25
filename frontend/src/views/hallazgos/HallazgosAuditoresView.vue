@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { listarHallazgos, listarHistorial } from '@/services/hallazgo.service'
 import type {
   EstadoHallazgo,
@@ -7,15 +8,24 @@ import type {
   Seguimiento,
 } from '@/types/hallazgo'
 
-type Vista = 'todos' | 'atrasados' | 'cierre_pendiente' | 'sin_actualizar' | 'reincidencia'
+type Vista =
+  | 'todos'
+  | 'abiertos'
+  | 'atrasados'
+  | 'cierre_pendiente'
+  | 'sin_actualizar'
+  | 'reincidencia'
 
 const vistas: { valor: Vista; etiqueta: string }[] = [
   { valor: 'todos', etiqueta: 'Todos' },
+  { valor: 'abiertos', etiqueta: 'Abiertos' },
   { valor: 'atrasados', etiqueta: 'Atrasados' },
   { valor: 'cierre_pendiente', etiqueta: 'Por cerrar' },
   { valor: 'sin_actualizar', etiqueta: 'Sin actualizar' },
   { valor: 'reincidencia', etiqueta: 'Reincidentes' },
 ]
+
+const route = useRoute()
 
 const ESTADO_LABEL: Record<EstadoHallazgo, string> = {
   abierto: 'Abierto',
@@ -39,6 +49,13 @@ const cargando = ref(false)
 const error = ref('')
 
 const vista = ref<Vista>('todos')
+const vistaQuery = route.query.vista
+if (
+  typeof vistaQuery === 'string' &&
+  vistas.some((v) => v.valor === vistaQuery)
+) {
+  vista.value = vistaQuery as Vista
+}
 const busqueda = ref('')
 
 const drawerAbierto = ref(false)
@@ -51,9 +68,17 @@ const btnCerrarDetalles = ref<HTMLButtonElement | null>(null)
 let focoPrevio: HTMLElement | null = null
 let overflowPrevio = ''
 
-onMounted(() => {
-  cargar()
+onMounted(async () => {
+  await cargar()
   window.addEventListener('keydown', alPresionarTecla)
+
+  const hallazgoQuery = route.query.hallazgo
+  const hallazgoId =
+    typeof hallazgoQuery === 'string' ? Number(hallazgoQuery) : NaN
+  if (!Number.isNaN(hallazgoId)) {
+    const encontrado = hallazgos.value.find((h) => h.id === hallazgoId)
+    if (encontrado) await abrirDetalles(encontrado)
+  }
 })
 
 onUnmounted(() => {
@@ -75,6 +100,7 @@ async function cargar() {
 }
 
 function coincideVista(h: HallazgoDetallado, valor: Vista): boolean {
+  if (valor === 'abiertos') return h.estado !== 'cerrado'
   if (valor === 'atrasados') return h.atrasado && h.estado !== 'cerrado'
   if (valor === 'cierre_pendiente') return h.estado === 'cierre_solicitado'
   if (valor === 'sin_actualizar') {

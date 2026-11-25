@@ -14,6 +14,10 @@ vi.mock('@/components/PlanSemanal.vue', () => ({
   default: { template: '<div class="plan-stub" />' },
 }))
 
+vi.mock('@/components/SupervisionPanel.vue', () => ({
+  default: { template: '<div class="supervision-stub" />' },
+}))
+
 import DashboardView from '../DashboardView.vue'
 
 function autenticar(rolNombre: string) {
@@ -84,6 +88,7 @@ describe('DashboardView - hero del supervisor', () => {
     await flushPromises()
 
     expect(wrapper.find('.hero').exists()).toBe(true)
+    expect(wrapper.find('.supervision-stub').exists()).toBe(true)
     expect(wrapper.text()).toContain('La calidad se audita')
     expect(wrapper.text()).toContain('3 capas de auditoría')
     expect(wrapper.text()).toContain('Ciclo de mejora')
@@ -99,6 +104,7 @@ describe('DashboardView - hero del supervisor', () => {
     await flushPromises()
 
     expect(wrapper.find('.hero').exists()).toBe(false)
+    expect(wrapper.find('.supervision-stub').exists()).toBe(false)
   })
 })
 

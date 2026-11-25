@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import type { Area, Celula } from '@/types/area'
 import type { Usuario } from '@/types/auth'
 import type {
@@ -13,6 +14,8 @@ import {
   obtenerOpcionesFiltrosRevision,
 } from '@/services/ejecucion.service'
 import PlanSemanal from '@/components/PlanSemanal.vue'
+
+const route = useRoute()
 
 const cargando = ref(false)
 const error = ref('')
@@ -40,6 +43,14 @@ const detalle = ref<EjecucionAuditoriaDetalle | null>(null)
 
 onMounted(async () => {
   await Promise.all([cargarOpciones(), cargar()])
+
+  const ejecucionQuery = route.query.ejecucion
+  const ejecucionId =
+    typeof ejecucionQuery === 'string' ? Number(ejecucionQuery) : NaN
+  if (!Number.isNaN(ejecucionId)) {
+    const encontrada = ejecuciones.value.find((e) => e.id === ejecucionId)
+    if (encontrada) await abrirDetalle(encontrada)
+  }
 })
 
 async function cargarOpciones() {
