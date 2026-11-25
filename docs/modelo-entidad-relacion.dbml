@@ -1,0 +1,373 @@
+// =============================================================================
+// LPA System — Modelo entidad-relación PostgreSQL
+// Fuente: backend/app/models/*.py y backend/migrations/versions/*.py
+// Head de migraciones: f1a2b3c4d5e6
+//
+// Las migraciones reales están en backend/migrations/versions/; no existe
+// backend/alembic/versions/. No se incluye la tabla alembic_version por ser
+// metadata interna de Alembic.
+// =============================================================================
+
+Project lpa_system {
+  database_type: 'PostgreSQL'
+
+  Note: '''
+    Esquema final consolidado a partir de los modelos SQLModel y de la cadena
+    de migraciones. Se usan los nombres originales en español.
+
+    Relaciones conceptuales:
+    - 1:1: respuesta ↔ hallazgo (hallazgo.respuesta_id es UNIQUE).
+    - N:M mediante tablas puente: usuario_area (usuario↔area),
+      usuario_celula (usuario↔celula), hallazgo_responsable
+      (hallazgo↔usuario) y usuario_supervisor (gerente↔supervisor).
+    - El resto son 1:N.
+
+    Diferencias detectadas entre modelos y migraciones:
+    1. programacion_semanal: la migración e4f5a6b7c8d9 crea
+       UNIQUE(semana_inicio, dia_semana) y CHECK(dia_semana BETWEEN 0 AND 4).
+       El modelo solo declara índice por semana_inicio y validaciones ge/le;
+       no declara la restricción UNIQUE compuesta.
+    2. ejecucion_auditoria.fecha_programada y hallazgo.fecha_cierre son
+       TIMESTAMP WITH TIME ZONE en las migraciones. El modelo usa datetime sin
+       timezone explícito, que SQLAlchemy mapea por defecto a TIMESTAMP WITHOUT
+       TIME ZONE.
+    3. frecuencia.dias y auditoria.dia_semana tienen validaciones ge/le en el
+       modelo, pero las migraciones no crean CHECK para esas columnas.
+    4. Varios defaults del modelo son de aplicación (Python) y no DEFAULT de
+       PostgreSQL: area.activa, capa.activa, usuario.activo, celula.activa,
+       auditoria.activa, criterio.orden, criterio.activo,
+       ejecucion_auditoria.estado, ejecucion_auditoria.fecha,
+       hallazgo.fecha_creacion, evidencia.tipo_archivo y
+       evidencia.fecha_carga.
+    5. hallazgo_seguimiento.fecha_creacion sí tiene DEFAULT now() en la
+       migración; el modelo solo declara default_factory de Python.
+    6. La cascada delete-orphan de Auditoria.dias_rows es de ORM. La FK de
+       auditoria_dia no declara ON DELETE CASCADE en la migración.
+    7. La migración 77d7424ea64a contempla una versión legacy de celula con
+       nombre/descripcion. El esquema vigente usa numero y
+       UNIQUE(area_id, numero).
+  '''
+}
+
+// -----------------------------------------------------------------------------
+// Catálogos
+// -----------------------------------------------------------------------------
+
+Table area {
+  id integer [pk, increment]
+  nombre varchar(150) [not null]
+  descripcion varchar(255)
+  activa boolean [not null]
+
+  indexes {
+    nombre [unique, name: 'ix_area_nombre']
+  }
+}
+
+Table capa {
+  id integer [pk, increment]
+  nombre varchar(100) [not null]
+  descripcion varchar(255)
+  activa boolean [not null]
+  requiere_celula boolean [not null, default: true]
+
+  indexes {
+    nombre [unique, name: 'ix_capa_nombre']
+  }
+}
+
+Table frecuencia {
+  id integer [pk, increment]
+  nombre varchar(100) [not null]
+  descripcion varchar(255)
+  dias integer [not null, note: 'Modelo: ge=1; migración: sin CHECK']
+
+  indexes {
+    nombre [unique, name: 'ix_frecuencia_nombre']
+  }
+}
+
+Table rol {
+  id integer [pk, increment]
+  nombre varchar(100) [not null]
+  descripcion varchar(255)
+
+  indexes {
+    nombre [unique, name: 'ix_rol_nombre']
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Usuarios y alcance
+// -----------------------------------------------------------------------------
+
+Table usuario {
+  id integer [pk, increment]
+  nombre varchar(150) [not null]
+  correo varchar(255) [not null]
+  contrasena_hash varchar(255) [not null]
+  activo boolean [not null]
+  rol_id integer [not null]
+
+  indexes {
+    correo [unique, name: 'ix_usuario_correo']
+  }
+}
+
+Table usuario_area {
+  usuario_id integer [not null]
+  area_id integer [not null]
+
+  indexes {
+    (usuario_id, area_id) [pk]
+  }
+  Note: 'Tabla puente N:M entre usuario y area.'
+}
+
+Table usuario_celula {
+  usuario_id integer [not null]
+  celula_id integer [not null]
+
+  indexes {
+    (usuario_id, celula_id) [pk]
+  }
+  Note: 'Tabla puente N:M entre usuario y celula.'
+}
+
+Table usuario_supervisor {
+  gerente_id integer [not null]
+  supervisor_id integer [not null]
+
+  indexes {
+    (gerente_id, supervisor_id) [pk]
+  }
+  Note: 'Tabla puente N:M autorreferente de usuario: gerente ↔ supervisor.'
+}
+
+// -----------------------------------------------------------------------------
+// Estructura de auditorías
+// -----------------------------------------------------------------------------
+
+Table celula {
+  id integer [pk, increment]
+  numero integer [not null]
+  activa boolean [not null]
+  area_id integer [not null]
+
+  indexes {
+    (area_id, numero) [unique, name: 'celula_area_id_numero_key']
+  }
+  Note: 'La migración 77d7424ea64a normaliza la versión legacy; el esquema vigente usa numero.'
+}
+
+Table auditoria {
+  id integer [pk, increment]
+  nombre varchar(150) [not null]
+  descripcion varchar(500)
+  activa boolean [not null]
+  tipo_respuesta varchar(20) [not null, default: 'semaforo']
+  dia_semana integer [note: 'Modelo: ge=0, le=6; migración: sin CHECK']
+  programacion_semanal boolean [not null, default: false]
+  capa_id integer [not null]
+  frecuencia_id integer [not null]
+  area_id integer
+
+  indexes {
+    nombre [name: 'ix_auditoria_nombre']
+  }
+}
+
+Table criterio {
+  id integer [pk, increment]
+  descripcion varchar(500) [not null]
+  orden integer [not null]
+  activo boolean [not null]
+  auditoria_id integer [not null]
+  seccion varchar(150)
+  subseccion varchar(150)
+  subtitulo varchar(150)
+}
+
+Table auditoria_dia {
+  id integer [pk, increment]
+  auditoria_id integer [not null]
+  dia_semana integer [not null, check: `dia_semana BETWEEN 0 AND 4`]
+
+  indexes {
+    (auditoria_id, dia_semana) [unique, name: 'uq_auditoria_dia']
+    auditoria_id [name: 'ix_auditoria_dia_auditoria_id']
+  }
+}
+
+Table programacion_semanal {
+  id integer [pk, increment]
+  semana_inicio date [not null]
+  dia_semana integer [not null, check: `dia_semana BETWEEN 0 AND 4`]
+  auditoria_id integer [not null]
+
+  indexes {
+    (semana_inicio, dia_semana) [unique, name: 'uq_programacion_semanal_semana_dia']
+    semana_inicio [name: 'ix_programacion_semanal_semana_inicio']
+  }
+  Note: 'La UNIQUE compuesta y el CHECK existen en la migración, pero la UNIQUE no está declarada en el modelo.'
+}
+
+// -----------------------------------------------------------------------------
+// Ejecución
+// -----------------------------------------------------------------------------
+
+Table ejecucion_auditoria {
+  id integer [pk, increment]
+  fecha timestamp [not null]
+  fecha_programada timestamptz [note: 'Migración: TIMESTAMP WITH TIME ZONE; modelo: datetime sin timezone explícito']
+  observaciones varchar(1000)
+  estado varchar(20) [not null]
+  auditoria_id integer [not null]
+  usuario_id integer [not null]
+  celula_id integer
+}
+
+Table respuesta {
+  id integer [pk, increment]
+  valor varchar(20) [not null]
+  observaciones varchar(1000)
+  ejecucion_auditoria_id integer [not null]
+  criterio_id integer [not null]
+
+  indexes {
+    (ejecucion_auditoria_id, criterio_id) [unique, name: 'uq_respuesta_ejecucion_criterio']
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Hallazgos y seguimiento
+// -----------------------------------------------------------------------------
+
+Table hallazgo {
+  id integer [pk, increment]
+  descripcion varchar(1000) [not null]
+  fecha_creacion timestamp [not null]
+  respuesta_id integer [not null, unique]
+  estado varchar(20) [not null, default: 'abierto']
+  accion_correctiva varchar(1000)
+  area_responsable_id integer
+  fecha_cierre timestamptz [note: 'Migración: TIMESTAMP WITH TIME ZONE; modelo: datetime sin timezone explícito']
+  fecha_limite timestamp
+}
+
+Table hallazgo_responsable {
+  hallazgo_id integer [not null]
+  usuario_id integer [not null]
+
+  indexes {
+    (hallazgo_id, usuario_id) [pk]
+  }
+  Note: 'Tabla puente N:M entre hallazgo y usuario responsable.'
+}
+
+Table hallazgo_seguimiento {
+  id integer [pk, increment]
+  hallazgo_id integer [not null]
+  usuario_id integer [not null]
+  tipo varchar(30) [not null]
+  detalle varchar(1000)
+  estado_desde varchar(20)
+  estado_hasta varchar(20)
+  fecha_creacion timestamp [not null, default: `now()`, note: 'Modelo: default_factory de Python; migración: DEFAULT now()']
+
+  indexes {
+    hallazgo_id [name: 'ix_hallazgo_seguimiento_hallazgo_id']
+  }
+  Note: 'Historial inmutable de cada actualización del hallazgo.'
+}
+
+Table evidencia {
+  id integer [pk, increment]
+  ruta_archivo varchar(500) [not null]
+  tipo_archivo varchar(100) [not null]
+  tipo varchar(20) [not null, default: 'original']
+  fecha_carga timestamp [not null]
+  hallazgo_id integer [not null]
+}
+
+// -----------------------------------------------------------------------------
+// Relaciones 1:N
+// -----------------------------------------------------------------------------
+
+Ref: celula.area_id > area.id
+Ref: auditoria.capa_id > capa.id
+Ref: auditoria.frecuencia_id > frecuencia.id
+Ref: auditoria.area_id > area.id
+Ref: usuario.rol_id > rol.id
+Ref: criterio.auditoria_id > auditoria.id
+Ref: ejecucion_auditoria.auditoria_id > auditoria.id
+Ref: ejecucion_auditoria.usuario_id > usuario.id
+Ref: ejecucion_auditoria.celula_id > celula.id
+Ref: respuesta.ejecucion_auditoria_id > ejecucion_auditoria.id
+Ref: respuesta.criterio_id > criterio.id
+Ref: evidencia.hallazgo_id > hallazgo.id
+Ref: hallazgo.area_responsable_id > area.id
+Ref: hallazgo_seguimiento.hallazgo_id > hallazgo.id
+Ref: hallazgo_seguimiento.usuario_id > usuario.id
+Ref: programacion_semanal.auditoria_id > auditoria.id
+Ref: auditoria_dia.auditoria_id > auditoria.id
+
+// -----------------------------------------------------------------------------
+// Relación 1:1
+// -----------------------------------------------------------------------------
+
+Ref: respuesta.id - hallazgo.respuesta_id
+
+// -----------------------------------------------------------------------------
+// Tablas puente N:M (cada relación conceptual usa dos claves foráneas)
+// -----------------------------------------------------------------------------
+
+Ref: usuario_area.usuario_id > usuario.id
+Ref: usuario_area.area_id > area.id
+
+Ref: usuario_celula.usuario_id > usuario.id
+Ref: usuario_celula.celula_id > celula.id
+
+Ref: hallazgo_responsable.hallazgo_id > hallazgo.id
+Ref: hallazgo_responsable.usuario_id > usuario.id
+
+Ref: usuario_supervisor.gerente_id > usuario.id
+Ref: usuario_supervisor.supervisor_id > usuario.id
+
+// -----------------------------------------------------------------------------
+// Grupos visuales para dbdiagram.io
+// -----------------------------------------------------------------------------
+
+TableGroup catalogos {
+  area
+  capa
+  frecuencia
+  rol
+}
+
+TableGroup usuarios_y_alcance {
+  usuario
+  usuario_area
+  usuario_celula
+  usuario_supervisor
+}
+
+TableGroup auditorias {
+  celula
+  auditoria
+  criterio
+  auditoria_dia
+  programacion_semanal
+}
+
+TableGroup ejecucion {
+  ejecucion_auditoria
+  respuesta
+}
+
+TableGroup hallazgos {
+  hallazgo
+  hallazgo_responsable
+  hallazgo_seguimiento
+  evidencia
+}
